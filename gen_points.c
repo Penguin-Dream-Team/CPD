@@ -62,10 +62,10 @@ double **get_points(int argc, char *argv[], int *n_dims, long *np)
     return pt_arr;
 }
 
-void print_points(double** points, int np, int n_dims) {
-    for(int i = 0; i < np; i++) {
+void print_points(double** points, int n_dims, int n_samples) {
+    for(int i = 0; i < n_dims; i++) {
         printf("Dimension %d\n", i);
-        for(int j = 0; j < n_dims; j++) {
+        for(int j = 0; j < n_samples; j++) {
             printf("\tPoint: %d = %f\n", j, points[i][j]);
         }
     }
