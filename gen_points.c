@@ -63,8 +63,15 @@ double **get_points(int argc, char *argv[], int *n_dims, long *np)
 }
 
 void print_point(double* point, int n_dims) {
+    print_point_indent(point, n_dims, 1);
+}
+
+void print_point_indent(double* point, int n_dims, int indent) {
     for(int i = 0; i < n_dims; i++) {
-        printf("\tDimension: %d = %f\n", i, point[i]);
+        for(int t = 0; t < indent; t++) {
+            printf("\t");
+        }
+        printf("Dimension: %d = %f\n", i, point[i]);
     }
 }
 
