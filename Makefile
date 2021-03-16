@@ -8,8 +8,8 @@ SOURCE    = main.c gen_points.c quick_sort.c
 HEADER    = gen_points.h quick_sort.h
 OUT       = ballAlg
 CC        = gcc
-FLAGS     = -g3 -c -Wall -O3
-LFLAGS    = -lm
+FLAGS     = -c -Wextra -Wall -O3
+LFLAGS    = -lm -fopenmp -O3 -Wextra -Wall
 # -g option enables debugging mode 
 # -c flag generates object code for separate files
 
@@ -21,13 +21,13 @@ all: $(OBJS)
 
 # create/compile the individual files >>separately<<
 main.o: main.c
-	$(CC) $(FLAGS) main.c -std=gnu99
+	$(CC) $(FLAGS) main.c
 
 ballQuery.o: ballQuery.c
-	$(CC) $(FLAGS) ballQuery.c -std=gnu99
+	$(CC) $(FLAGS) ballQuery.c
 
 gen_points.o: gen_points.c
-	$(CC) $(FLAGS) gen_points.c -std=gnu99
+	$(CC) $(FLAGS) gen_points.c
 
 
 # clean house
