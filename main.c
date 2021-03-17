@@ -40,16 +40,38 @@ void free_node(node_t *node) {
   free(node);
 }
 
-double distance_sqrd(int n_dims, double *pt1, double *pt2) {
+double distance_sqrd(int n_dims, double *pt1, double *pt2, double *median) {
   double dist = 0.0;
 
-  for (int d = 0; d < n_dims; d++)
-    dist += (pt1[d] - pt2[d]) * (pt1[d] - pt2[d]);
+  if (median != NULL) {
+    for (int d = 0; d < n_dims; d++) {
+      median[d] = pt2[d];
+      dist += (pt1[d] - pt2[d]) * (pt1[d] - pt2[d]);
+    }
+  } else {
+    for (int d = 0; d < n_dims; d++) 
+      dist += (pt1[d] - pt2[d]) * (pt1[d] - pt2[d]);
+  }
+
   return dist;
 }
 
-double distance(int n_dims, double *pt1, double *pt2) {
-  return sqrt(distance_sqrd(n_dims, pt1, pt2));
+double distance_sqrd2(int n_dims, double *pt1, double *pt2, double *pt3, double *median) {
+  double dist = 0.0;
+
+  for (int d = 0; d < n_dims; d++) {
+    median[d] = (pt2[d] + pt3[d]) / 2;
+    dist += (pt1[d] - median[d]) * (pt1[d] - median[d]);
+  }
+  return dist;
+}
+
+double distance(int n_dims, double *pt1, double *pt2, double *median) {
+  return sqrt(distance_sqrd(n_dims, pt1, pt2, median));
+}
+
+double distance2(int n_dims, double *pt1, double *pt2, double *pt3, double *median) {
+  return sqrt(distance_sqrd2(n_dims, pt1, pt2, pt3, median));
 }
 
 int get_furthest_point(double **points, long point, int n_dims, long n_set,
@@ -61,7 +83,7 @@ int get_furthest_point(double **points, long point, int n_dims, long n_set,
   for (long i = 0; i < n_set; i++) {
     long current_point = set[i];
     if (i != point) {
-      distances[i] = distance(n_dims, points[set[point]], points[current_point]);
+      distances[i] = distance_sqrd(n_dims, points[set[point]], points[current_point], NULL);
       if (max_distance < distances[i]) {
         max = i;
         max_distance = distances[i];
@@ -150,26 +172,19 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
    * Get median point which will be the center of the ball
    */
   double *median_point = malloc(sizeof(double) * n_dims);
-  if (n_set % 2 == 0) {
-    int mid_point_i = n_set / 2 - 1;
-    for (int i = 0; i < n_dims; i++) {
-      median_point[i] =
-          (ortho_points[mid_point_i].center[i] + ortho_points[mid_point_i + 1].center[i]) / 2;
-    }
-  } else {
-    int mid_point_i = n_set / 2;
-    for (int i = 0; i < n_dims; i++) {
-      median_point[i] = ortho_points[mid_point_i].center[i];
-    }
-  }
 
   /*
    * Get the radius of the ball (largest distance)
    */
   double distances[2] = {0.0, 0.0};
 
-  distances[0] = distance(n_dims, points[ortho_points[0].point_id], median_point);
-  distances[1] = distance(n_dims, points[ortho_points[n_set - 1].point_id], median_point);
+  if (n_set % 2 == 0) {
+    distances[0] = distance2(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
+    distances[1] = distance2(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
+  } else {
+    distances[0] = distance(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, median_point);
+    distances[1] = distance(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, median_point);
+  }
 
   double radius = (distances[0] > distances[1]) ? distances[0] : distances[1];
 
