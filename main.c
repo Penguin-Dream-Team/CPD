@@ -61,11 +61,6 @@ int get_furthest_point(double **points, long point, int n_dims, long n_set,
   for (long i = 0; i < n_set; i++) {
     long current_point = set[i];
     if (i != point) {
-      //printf("i %ld n_dims %d set_point %ld current_point %ld point %ld\n", i, n_dims, set[point], current_point, point);
-      points[set[point]];
-      points[current_point];
-      distances[i];
-      distance(n_dims, points[set[point]], points[current_point]);
       distances[i] = distance(n_dims, points[set[point]], points[current_point]);
       if (max_distance < distances[i]) {
         max = i;
@@ -73,7 +68,6 @@ int get_furthest_point(double **points, long point, int n_dims, long n_set,
       }
     }
   }
-  //printf("\n");
   free(distances);
   return max;
 }
@@ -106,10 +100,17 @@ int cmpfunc (const void * pa, const void * pb) {
   const node_t *a = (const node_t *)pa;
   const node_t *b = (const node_t *)pb;
 
-  return (int) (a->center[0] - b->center[0]);
+  if (a->center[0] > b->center[0]) {
+    return 1;
+  } else if (a->center[0] < b->center[0]) {
+    return -1;
+  } else {
+    return 0;
+  }
 }
 
 node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* ortho_points) {
+  //printf("dims: %d set: %ld\n", n_dims, n_set);
   if (n_set < 1) {
     return NULL;
   } else if (n_set == 1) {
@@ -137,7 +138,7 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
    */
   //quick_sort(ortho_points, 0, n_set - 1, 0, n_dims, set);
   qsort(ortho_points, n_set, sizeof(node_t), cmpfunc);
-  //qsort(points, n_set, sizeof(points[0]), cmpfunc);
+
   /*
    * Get median point which will be the center of the ball
    */
@@ -150,6 +151,7 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
     }
   } else {
     int mid_point_i = n_set / 2;
+    //printf("mid point %d\n", mid_point_i);
     for (int i = 0; i < n_dims; i++) {
       median_point[i] = ortho_points[mid_point_i].center[i];
     }
@@ -172,21 +174,26 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
   long *right_set = malloc(sizeof(long) * n_set);
   long left_set_count = 0;
   long right_set_count = 0;
+  //printf("median point: %f\n", median_point[0]);
   for (long i = 0; i < n_set; i++) {
     long point_index = ortho_points[i].point_id;
+    //printf("ortho point: %f\n", ortho_points[i].center[0]);
     if (ortho_points[i].center[0] < median_point[0]) {
       left_set[left_set_count++] = point_index;
-    } else {
+    } /*else if (ortho_points[i].center[0] != median_point[0]) {
+      right_set[right_set_count++] = point_index;
+    }*/ else {
       right_set[right_set_count++] = point_index;
     }
   }
 
   node_t *tree = create_node(median_point, -1, radius);
+  //printf("Left set: %ld Right set: %ld\n\n", left_set_count, right_set_count);
   tree->L = build_tree(points, n_dims, left_set_count, left_set, ortho_points);
   tree->R = build_tree(points, n_dims, right_set_count, right_set, ortho_points);
 
-//free(left_set);
-//free(right_set);
+  free(left_set);
+  free(right_set);
 
   return tree;
 }
