@@ -8,7 +8,7 @@ SOURCE    = main.c gen_points.c quick_sort.c
 HEADER    = gen_points.h quick_sort.h
 OUT       = ballAlg
 CC        = gcc
-FLAGS     = -g3 -c -Wextra -Wall -O3
+FLAGS     = -c -Wextra -Wall -O3
 LFLAGS    = -lm -fopenmp -O3 -Wextra -Wall
 # -g option enables debugging mode 
 # -c flag generates object code for separate files

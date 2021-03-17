@@ -72,27 +72,24 @@ int get_furthest_point(double **points, long point, int n_dims, long n_set,
   return max;
 }
 
-void calc_ortho_projection(double **points, int n_dims, int a, int b, int p,
+void calc_ortho_projection(double **points, int n_dims, int a, double* b_minus_a_set, double* b_minus_a_sqr_set, int p,
                            long *set, node_t *out_points) {
   long index_a = set[a];
-  long index_b = set[b];
   long index_p = set[p];
   double top_inner_product = 0;
   double bot_inner_product = 0;
+
   for (int i = 0; i < n_dims; i++) {
     double *value_a = &points[index_a][i];
-    double *value_b = &points[index_b][i];
     double *value_p = &points[index_p][i];
-    top_inner_product += (*value_p - *value_a) * (*value_b - *value_a);
-    bot_inner_product += (*value_b - *value_a) * (*value_b - *value_a);
+    top_inner_product += (*value_p - *value_a) * b_minus_a_set[i];
+    bot_inner_product += b_minus_a_sqr_set[i];
   }
   double inner_product = top_inner_product / bot_inner_product;
 
   for (int i = 0; i < n_dims; i++) {
     double *value_a = &points[index_a][i];
-    double *value_b = &points[index_b][i];
-    out_points[p].center[i] = inner_product * (*value_b - *value_a);
-    out_points[p].center[i] += *value_a;
+    out_points[p].center[i] = inner_product * b_minus_a_set[i] + *value_a;
   }
 }
 
@@ -110,7 +107,6 @@ int cmpfunc (const void * pa, const void * pb) {
 }
 
 node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* ortho_points) {
-  //printf("dims: %d set: %ld\n", n_dims, n_set);
   if (n_set < 1) {
     return NULL;
   } else if (n_set == 1) {
@@ -127,16 +123,27 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
     b = get_furthest_point(points, a, n_dims, n_set, set);
   }
 
+  double *b_minus_a_set = malloc(sizeof(double) * n_dims);
+  double *b_minus_a_sqr_set = malloc(sizeof(double) * n_dims);
+  for (int i = 0; i < n_dims; i++) {
+    double *value_a = &points[a][i];
+    double *value_b = &points[b][i];
+    double b_minus_a = *value_b - *value_a;
+    double b_minus_a_sqr = b_minus_a * b_minus_a;
+    
+    b_minus_a_set[i] = b_minus_a;
+    b_minus_a_sqr_set[i] = b_minus_a_sqr;
+  }
+
   for (long i = 0; i < n_set; i++) {
     ortho_points[i].center = malloc(sizeof(double) * n_dims);
     ortho_points[i].point_id = set[i];
-    calc_ortho_projection(points, n_dims, a, b, i, set, ortho_points);
+    calc_ortho_projection(points, n_dims, a, b_minus_a_set, b_minus_a_sqr_set, i, set, ortho_points);
   }
 
   /*
    * Sort ortho projection points
    */
-  //quick_sort(ortho_points, 0, n_set - 1, 0, n_dims, set);
   qsort(ortho_points, n_set, sizeof(node_t), cmpfunc);
 
   /*
@@ -151,7 +158,6 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
     }
   } else {
     int mid_point_i = n_set / 2;
-    //printf("mid point %d\n", mid_point_i);
     for (int i = 0; i < n_dims; i++) {
       median_point[i] = ortho_points[mid_point_i].center[i];
     }
@@ -174,21 +180,18 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
   long *right_set = malloc(sizeof(long) * n_set);
   long left_set_count = 0;
   long right_set_count = 0;
-  //printf("median point: %f\n", median_point[0]);
+  
   for (long i = 0; i < n_set; i++) {
     long point_index = ortho_points[i].point_id;
-    //printf("ortho point: %f\n", ortho_points[i].center[0]);
     if (ortho_points[i].center[0] < median_point[0]) {
       left_set[left_set_count++] = point_index;
-    } /*else if (ortho_points[i].center[0] != median_point[0]) {
-      right_set[right_set_count++] = point_index;
-    }*/ else {
+    } else {
       right_set[right_set_count++] = point_index;
     }
   }
 
   node_t *tree = create_node(median_point, -1, radius);
-  //printf("Left set: %ld Right set: %ld\n\n", left_set_count, right_set_count);
+
   tree->L = build_tree(points, n_dims, left_set_count, left_set, ortho_points);
   tree->R = build_tree(points, n_dims, right_set_count, right_set, ortho_points);
 
