@@ -162,6 +162,8 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
     ortho_points[i].point_id = set[i];
     calc_ortho_projection(points, n_dims, a, b_minus_a_set, b_minus_a_sqr_set, i, set, ortho_points);
   }
+  free(b_minus_a_set);
+  free(b_minus_a_sqr_set);
 
   /*
    * Sort ortho projection points
@@ -177,13 +179,18 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
    * Get the radius of the ball (largest distance)
    */
   double distances[2] = {0.0, 0.0};
-
+  long left_set_count;
+  long right_set_count;
   if (n_set % 2 == 0) {
     distances[0] = distance2(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
     distances[1] = distance2(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
+    left_set_count = n_set / 2;
+    right_set_count = n_set / 2;
   } else {
     distances[0] = distance(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, median_point);
     distances[1] = distance(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, median_point);
+    left_set_count = n_set / 2;
+    right_set_count = n_set / 2 + 1;
   }
 
   double radius = (distances[0] > distances[1]) ? distances[0] : distances[1];
@@ -191,19 +198,11 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
   /*
    * Separate L and R sets
    */
-  long *left_set = malloc(sizeof(long) * n_set);
-  long *right_set = malloc(sizeof(long) * n_set);
-  long left_set_count = 0;
-  long right_set_count = 0;
-  
-  for (long i = 0; i < n_set; i++) {
-    long point_index = ortho_points[i].point_id;
-    if (ortho_points[i].center[0] < median_point[0]) {
-      left_set[left_set_count++] = point_index;
-    } else {
-      right_set[right_set_count++] = point_index;
-    }
-  }
+  long *left_set = malloc(sizeof(long) * left_set_count);
+  long *right_set = malloc(sizeof(long) * right_set_count);
+  memcpy(left_set, set, sizeof(long) * left_set_count); 
+  memcpy(right_set, &set[left_set_count], sizeof(long) * right_set_count);
+  //free(set);
 
   node_t *tree = create_node(median_point, -1, radius);
 
