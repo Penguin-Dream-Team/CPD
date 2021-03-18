@@ -5,7 +5,6 @@
 #include <omp.h>
 
 #include "gen_points.h"
-#include "quick_sort.h"
 
 typedef struct _node {
   long point_id;
@@ -76,21 +75,18 @@ double distance2(int n_dims, double *pt1, double *pt2, double *pt3, double *medi
 
 int get_furthest_point(double **points, long point, int n_dims, long n_set,
                        long *set) {
-  double *distances = malloc(sizeof(double) * n_set);
-
   long max = point;
-  double max_distance = 0;
+  double distance, max_distance = 0;
   for (long i = 0; i < n_set; i++) {
     long current_point = set[i];
     if (i != point) {
-      distances[i] = distance_sqrd(n_dims, points[set[point]], points[current_point], NULL);
-      if (max_distance < distances[i]) {
+      distance = distance_sqrd(n_dims, points[set[point]], points[current_point], NULL);
+      if (max_distance < distance) {
         max = i;
-        max_distance = distances[i];
+        max_distance = distance;
       }
     }
   }
-  free(distances);
   return max;
 }
 

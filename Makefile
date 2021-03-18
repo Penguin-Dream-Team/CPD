@@ -3,8 +3,8 @@
 #    A. Delis (ad@di.uoa.gr)
 #
 
-OBJS      = main.o gen_points.o quick_sort.o
-SOURCE    = main.c gen_points.c quick_sort.c
+OBJS      = main.o gen_points.o
+SOURCE    = main.c gen_points.c
 HEADER    = gen_points.h quick_sort.h
 OUT       = ballAlg
 CC        = gcc
