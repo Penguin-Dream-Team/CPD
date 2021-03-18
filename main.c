@@ -90,24 +90,15 @@ int get_furthest_point(double **points, long point, int n_dims, long n_set,
   return max;
 }
 
-void calc_ortho_projection(double **points, int n_dims, int a, double* b_minus_a_set, double* b_minus_a_sqr_set, int p,
+void calc_ortho_projection(double **points, int n_dims, int a, double* b_minus_a_sqr_set, double b_minus_a_sqr_sum, int p,
                            long *set, node_t *out_points) {
   long index_a = set[a];
   long index_p = set[p];
-  double top_inner_product = 0;
-  double bot_inner_product = 0;
 
   for (int i = 0; i < n_dims; i++) {
     double *value_a = &points[index_a][i];
     double *value_p = &points[index_p][i];
-    top_inner_product += (*value_p - *value_a) * b_minus_a_set[i];
-    bot_inner_product += b_minus_a_sqr_set[i];
-  }
-  double inner_product = top_inner_product / bot_inner_product;
-
-  for (int i = 0; i < n_dims; i++) {
-    double *value_a = &points[index_a][i];
-    out_points[p].center[i] = inner_product * b_minus_a_set[i] + *value_a;
+    out_points[p].center[i] += (*value_p - *value_a) / b_minus_a_sqr_sum * b_minus_a_sqr_set[i] / n_dims + a;
   }
 }
 
@@ -141,24 +132,23 @@ node_t *build_tree(double **points, int n_dims, long n_set, long *set, node_t* o
     b = get_furthest_point(points, a, n_dims, n_set, set);
   }
 
-  double *b_minus_a_set = malloc(sizeof(double) * n_dims);
   double *b_minus_a_sqr_set = malloc(sizeof(double) * n_dims);
+  double b_minus_a_sqr_sum = 0.0;
   for (int i = 0; i < n_dims; i++) {
     double *value_a = &points[a][i];
     double *value_b = &points[b][i];
     double b_minus_a = *value_b - *value_a;
     double b_minus_a_sqr = b_minus_a * b_minus_a;
     
-    b_minus_a_set[i] = b_minus_a;
     b_minus_a_sqr_set[i] = b_minus_a_sqr;
+    b_minus_a_sqr_sum += b_minus_a_sqr;
   }
 
   for (long i = 0; i < n_set; i++) {
     ortho_points[i].center = malloc(sizeof(double) * n_dims);
     ortho_points[i].point_id = set[i];
-    calc_ortho_projection(points, n_dims, a, b_minus_a_set, b_minus_a_sqr_set, i, set, ortho_points);
+    calc_ortho_projection(points, n_dims, a, b_minus_a_sqr_set, b_minus_a_sqr_sum, i, set, ortho_points);
   }
-  free(b_minus_a_set);
   free(b_minus_a_sqr_set);
 
   /*
