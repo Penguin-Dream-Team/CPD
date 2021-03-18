@@ -75,21 +75,18 @@ double distance2(int n_dims, double *pt1, double *pt2, double *pt3, double *medi
 
 int get_furthest_point(double **points, long point, int n_dims, long n_set,
                        node_t* ortho_points) {
-  double *distances = malloc(sizeof(double) * n_set);
-
   long max = point;
-  double max_distance = 0;
+  double distance, max_distance = 0;
   for (long i = 0; i < n_set; i++) {
     long current_point = ortho_points[i].point_id;
     if (i != point) {
-      distances[i] = distance_sqrd(n_dims, points[ortho_points[point].point_id], points[current_point], NULL);
-      if (max_distance < distances[i]) {
+      distance = distance_sqrd(n_dims, points[ortho_points[point].point_id], points[current_point], NULL);
+      if (max_distance < distance) {
         max = i;
-        max_distance = distances[i];
+        max_distance = distance;
       }
     }
   }
-  free(distances);
   return max;
 }
 
@@ -154,7 +151,6 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
       b_minus_a_set[i] = b_minus_a;
       b_minus_a_sqr_set[i] = b_minus_a_sqr;
     }
-
     for (long i = 0; i < n_set; i++) {
       calc_ortho_projection(points, n_dims, a, b_minus_a_set, b_minus_a_sqr_set, i, ortho_points);
     }
@@ -165,6 +161,12 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
     * Sort ortho projection points
     */
     qsort(ortho_points, n_set, sizeof(node_t), cmpfunc);
+
+  } else {
+    for (int i = 0; i < n_dims; i++) {
+      ortho_points[a].center[i] = points[ortho_points[a].point_id][i];
+      ortho_points[b].center[i] = points[ortho_points[b].point_id][i];
+    }
   }
 
   /*
@@ -178,16 +180,17 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   double distances[2] = {0.0, 0.0};
   long left_set_count;
   long right_set_count;
-  if (n_set % 2 == 0) {
-    distances[0] = distance2(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
-    distances[1] = distance2(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
-    left_set_count = n_set / 2;
-    right_set_count = n_set / 2;
-  } else {
+  if (n_set % 2 != 0) {
     distances[0] = distance(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, median_point);
     distances[1] = distance(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, median_point);
     left_set_count = n_set / 2;
     right_set_count = n_set / 2 + 1;
+    
+  } else {
+    distances[0] = distance2(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
+    distances[1] = distance2(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
+    left_set_count = n_set / 2;
+    right_set_count = n_set / 2;
   }
 
   double radius = (distances[0] > distances[1]) ? distances[0] : distances[1];
