@@ -39,7 +39,7 @@ void free_node(node_t *node) {
   free(node);
 }
 
-double distance_sqrd(int n_dims, double *pt1, double *pt2, double *median) {
+double distance_sqrd(int n_dims, double *pt1, double *pt2, double *median, double *distance) {
   double dist = 0.0;
 
   if (median != NULL) {
@@ -48,8 +48,10 @@ double distance_sqrd(int n_dims, double *pt1, double *pt2, double *median) {
       dist += (pt1[d] - pt2[d]) * (pt1[d] - pt2[d]);
     }
   } else {
-    for (int d = 0; d < n_dims; d++) 
+    for (int d = 0; d < n_dims; d++) {
       dist += (pt1[d] - pt2[d]) * (pt1[d] - pt2[d]);
+    }
+    *distance = pt1[0] - pt2[0];
   }
 
   return dist;
@@ -66,7 +68,7 @@ double distance_sqrd2(int n_dims, double *pt1, double *pt2, double *pt3, double 
 }
 
 double distance(int n_dims, double *pt1, double *pt2, double *median) {
-  return sqrt(distance_sqrd(n_dims, pt1, pt2, median));
+  return sqrt(distance_sqrd(n_dims, pt1, pt2, median, NULL));
 }
 
 double distance2(int n_dims, double *pt1, double *pt2, double *pt3, double *median) {
@@ -76,11 +78,11 @@ double distance2(int n_dims, double *pt1, double *pt2, double *pt3, double *medi
 int get_furthest_point(double **points, long point, int n_dims, long n_set,
                        node_t* ortho_points) {
   long max = point;
-  double distance, max_distance = 0;
+  double distance, max_distance = 0.0;
   for (long i = 0; i < n_set; i++) {
     long current_point = ortho_points[i].point_id;
     if (i != point) {
-      distance = distance_sqrd(n_dims, points[ortho_points[point].point_id], points[current_point], NULL);
+      distance = distance_sqrd(n_dims, points[current_point], points[ortho_points[point].point_id], NULL, &ortho_points[i].center[0]);
       if (max_distance < distance) {
         max = i;
         max_distance = distance;
@@ -90,24 +92,28 @@ int get_furthest_point(double **points, long point, int n_dims, long n_set,
   return max;
 }
 
-void calc_ortho_projection(double **points, int n_dims, int a, double* b_minus_a_set, double* b_minus_a_sqr_set, int p,
-                           node_t* out_points) {
-  long index_a = out_points[a].point_id;
-  long index_p = out_points[p].point_id;
-  double top_inner_product = 0;
+void calc_ortho_projection(double **points, int n_set, int n_dims, long index_a, long index_b, long index_p1, long index_p2, node_t *ortho_points) {
+  double top_inner_product1 = 0;
+  double top_inner_product2 = 0;
   double bot_inner_product = 0;
-
   for (int i = 0; i < n_dims; i++) {
     double *value_a = &points[index_a][i];
-    double *value_p = &points[index_p][i];
-    top_inner_product += (*value_p - *value_a) * b_minus_a_set[i];
-    bot_inner_product += b_minus_a_sqr_set[i];
+    double *value_b = &points[index_b][i];
+    double *value_p1 = &points[index_p1][i];
+    double *value_p2 = &points[index_p2][i];
+    double b_minus_a = *value_b - *value_a;
+    top_inner_product1 += (*value_p1 - *value_a) * b_minus_a;
+    top_inner_product2 += (*value_p2 - *value_a) * b_minus_a;
+    bot_inner_product += b_minus_a * b_minus_a;
   }
-  double inner_product = top_inner_product / bot_inner_product;
+  double inner_product1 = top_inner_product1 / bot_inner_product;
+  double inner_product2 = top_inner_product2 / bot_inner_product;
 
   for (int i = 0; i < n_dims; i++) {
     double *value_a = &points[index_a][i];
-    out_points[p].center[i] = inner_product * b_minus_a_set[i] + *value_a;
+    double *value_b = &points[index_b][i];
+    ortho_points[n_set / 2].center[i] = inner_product1 * (*value_b - *value_a) + *value_a;
+    ortho_points[n_set / 2 - 1].center[i] = inner_product2 * (*value_b - *value_a) + *value_a;
   }
 }
 
@@ -140,29 +146,12 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
     a = get_furthest_point(points, 0, n_dims, n_set, ortho_points);
     b = get_furthest_point(points, a, n_dims, n_set, ortho_points);
 
-    double *b_minus_a_set = malloc(sizeof(double) * n_dims);
-    double *b_minus_a_sqr_set = malloc(sizeof(double) * n_dims);
-    for (int i = 0; i < n_dims; i++) {
-      double *value_a = &points[ortho_points[a].point_id][i];
-      double *value_b = &points[ortho_points[b].point_id][i];
-      double b_minus_a = *value_b - *value_a;
-      double b_minus_a_sqr = b_minus_a * b_minus_a;
-      
-      b_minus_a_set[i] = b_minus_a;
-      b_minus_a_sqr_set[i] = b_minus_a_sqr;
-    }
-    for (long i = 0; i < n_set; i++) {
-      calc_ortho_projection(points, n_dims, a, b_minus_a_set, b_minus_a_sqr_set, i, ortho_points);
-    }
-    free(b_minus_a_set);
-    free(b_minus_a_sqr_set);
-
     /*
     * Sort ortho projection points
     */
     qsort(ortho_points, n_set, sizeof(node_t), cmpfunc);
 
-  } else {
+  } else { 
     for (int i = 0; i < n_dims; i++) {
       ortho_points[a].center[i] = points[ortho_points[a].point_id][i];
       ortho_points[b].center[i] = points[ortho_points[b].point_id][i];
@@ -180,12 +169,25 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   double distances[2] = {0.0, 0.0};
   long left_set_count;
   long right_set_count;
+  
+  /* Calc ortho projection of median points */
+  if (n_set == 2) {
+    for (int i = 0; i < n_dims; i++) {
+      ortho_points[0].center[i] = points[ortho_points[0].point_id][i];
+      ortho_points[1].center[i] = points[ortho_points[1].point_id][i];
+    }
+  }
+  else {
+    calc_ortho_projection(points, n_set, n_dims, ortho_points[0].point_id, ortho_points[n_set - 1].point_id,
+        ortho_points[n_set / 2].point_id, ortho_points[n_set / 2 - 1].point_id, ortho_points);
+  }
+
   if (n_set % 2 != 0) {
     distances[0] = distance(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, median_point);
     distances[1] = distance(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, median_point);
     left_set_count = n_set / 2;
     right_set_count = n_set / 2 + 1;
-    
+
   } else {
     distances[0] = distance2(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
     distances[1] = distance2(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
