@@ -39,26 +39,30 @@ void free_node(node_t *node) {
   free(node);
 }
 
-double distance_sqrd(int n_dims, double *pt1, double *pt2, double *median, node_t *ortho_point) {
+double distance_sqrd(int n_dims, double *pt1, double *pt2, node_t *ortho_point) {
   double dist = 0.0;
 
-  if (median != NULL) {
-    for (int d = 0; d < n_dims; d++) {
-      median[d] = pt2[d];
-      dist += (pt1[d] - pt2[d]) * (pt1[d] - pt2[d]);
-    }
-  } else {
-    for (int d = 0; d < n_dims; d++) {
-      double tmp = pt1[d] - pt2[d];
-      dist += tmp * tmp;
-      ortho_point->center[d] = tmp;
-    }
+  for (int d = 0; d < n_dims; d++) {
+    double tmp = pt1[d] - pt2[d];
+    dist += tmp * tmp;
+    ortho_point->center[d] = tmp;
   }
 
   return dist;
 }
 
-double distance_sqrd2(int n_dims, double *pt1, double *pt2, double *pt3, double *median) {
+double distance_sqrd_med(int n_dims, double *pt1, double *pt2, double *median) {
+  double dist = 0.0;
+
+  for (int d = 0; d < n_dims; d++) {
+    median[d] = pt2[d];
+    dist += (pt1[d] - pt2[d]) * (pt1[d] - pt2[d]);
+  }
+
+  return dist;
+}
+
+double distance_sqrd_med2(int n_dims, double *pt1, double *pt2, double *pt3, double *median) {
   double dist = 0.0;
 
   for (int d = 0; d < n_dims; d++) {
@@ -69,11 +73,11 @@ double distance_sqrd2(int n_dims, double *pt1, double *pt2, double *pt3, double 
 }
 
 double distance(int n_dims, double *pt1, double *pt2, double *median) {
-  return sqrt(distance_sqrd(n_dims, pt1, pt2, median, NULL));
+  return sqrt(distance_sqrd_med(n_dims, pt1, pt2, median));
 }
 
 double distance2(int n_dims, double *pt1, double *pt2, double *pt3, double *median) {
-  return sqrt(distance_sqrd2(n_dims, pt1, pt2, pt3, median));
+  return sqrt(distance_sqrd_med2(n_dims, pt1, pt2, pt3, median));
 }
 
 int get_furthest_point(double **points, long point, int n_dims, long n_set,
@@ -81,8 +85,7 @@ int get_furthest_point(double **points, long point, int n_dims, long n_set,
   long max = point;
   double distance, max_distance = 0.0;
   for (long i = 0; i < n_set; i++) {
-    long current_point = ortho_points[i].point_id;
-    distance = distance_sqrd(n_dims, points[current_point], points[ortho_points[point].point_id], NULL, &ortho_points[i]);
+    distance = distance_sqrd(n_dims, points[ortho_points[i].point_id], points[ortho_points[point].point_id], &ortho_points[i]);
     if (max_distance < distance) {
       max = i;
       max_distance = distance;
@@ -106,6 +109,7 @@ void calc_ortho_projection(double **points, int n_set, int n_dims, long index_a,
     top_inner_product2 += (*value_p2 - *value_a) * b_minus_a;
     bot_inner_product += b_minus_a * b_minus_a;
   }
+
   double inner_product1 = top_inner_product1 / bot_inner_product;
   double inner_product2 = top_inner_product2 / bot_inner_product;
 
@@ -131,10 +135,30 @@ int cmpfunc (const void * pa, const void * pb) {
 }
 
 node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points) {
-  if (n_set < 1) {
+  if (n_set == 0) {
     return NULL;
+
   } else if (n_set == 1) {
     return create_node(points[ortho_points[0].point_id], ortho_points[0].point_id, 0);
+
+  } else if (n_set == 2) {
+    double *median_point = malloc(sizeof(double) * n_dims);
+    double *point1 = points[ortho_points[0].point_id];
+    double *point2 = points[ortho_points[1].point_id];
+
+    double dist = distance2(n_dims, point1, point1, point2, median_point);
+
+    node_t *tree = create_node(median_point, -1, dist);
+    
+    if (point1[0] < point2[0]) {
+      tree->L = create_node(point1, ortho_points[0].point_id, 0);
+      tree->R = create_node(point2, ortho_points[1].point_id, 0);
+    } else {
+      tree->L = create_node(point2, ortho_points[1].point_id, 0);
+      tree->R = create_node(point1, ortho_points[0].point_id, 0);
+    }
+    
+    return tree;
   }
 
   /*
@@ -142,23 +166,15 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
    */
   long a = 0;
   long b = 1;
-  if (n_set != 2) {
-    a = get_furthest_point(points, 0, n_dims, n_set, ortho_points);
-    b = get_furthest_point(points, a, n_dims, n_set, ortho_points);
+  a = get_furthest_point(points, 0, n_dims, n_set, ortho_points);
+  b = get_furthest_point(points, a, n_dims, n_set, ortho_points);
 
-    for (int i = 0; i < n_set; i++) {
-      double projection = 0.0;
-      for (int d = 0; d < n_dims; d++) {
-        projection += ortho_points[i].center[d] * (points[ortho_points[b].point_id][d] - points[ortho_points[a].point_id][d]);
-      }
-      ortho_points[i].center[0] = projection * (points[ortho_points[b].point_id][0] - points[ortho_points[a].point_id][0]);
+  for (int i = 0; i < n_set; i++) {
+    double projection = 0.0;
+    for (int d = 0; d < n_dims; d++) {
+      projection += ortho_points[i].center[d] * (points[ortho_points[b].point_id][d] - points[ortho_points[a].point_id][d]);
     }
-
-  } else { 
-    for (int i = 0; i < n_dims; i++) {
-      ortho_points[a].center[i] = points[ortho_points[a].point_id][i];
-      ortho_points[b].center[i] = points[ortho_points[b].point_id][i];
-    }
+    ortho_points[i].center[0] = projection * (points[ortho_points[b].point_id][0] - points[ortho_points[a].point_id][0]);
   }
 
   /*
@@ -179,9 +195,8 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   long right_set_count;
   
   /* Calc ortho projection of median points */
-  if (n_set != 2) 
-    calc_ortho_projection(points, n_set, n_dims, ortho_points[0].point_id, ortho_points[n_set - 1].point_id,
-        ortho_points[n_set / 2].point_id, ortho_points[n_set / 2 - 1].point_id, ortho_points);
+  calc_ortho_projection(points, n_set, n_dims, ortho_points[0].point_id, ortho_points[n_set - 1].point_id,
+      ortho_points[n_set / 2].point_id, ortho_points[n_set / 2 - 1].point_id, ortho_points);
 
   if (n_set % 2 != 0) {
     distances[0] = distance(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, median_point);
@@ -205,7 +220,7 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   node_t *right_set = malloc(sizeof(node_t) * right_set_count);
   memcpy(left_set, ortho_points, sizeof(node_t) * left_set_count); 
   memcpy(right_set, &ortho_points[left_set_count], sizeof(node_t) * right_set_count);
-
+  
   node_t *tree = create_node(median_point, -1, radius);
   
   tree->L = build_tree(points, n_dims, left_set_count, left_set);
@@ -277,8 +292,8 @@ void print_tree(node_t *tree, int n_dims, double **points) {
 
 int main(int argc, char *argv[]) {
   double exec_time;
-  exec_time = -omp_get_wtime();
 
+  exec_time = -omp_get_wtime();
   int n_dims;
   long n_samples;
   double **points = get_points(argc, argv, &n_dims, &n_samples);
