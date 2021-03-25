@@ -1,3 +1,5 @@
+// Serial version
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,14 +29,14 @@ node_t *create_node(double *point, long id, double radius) {
 }
 
 void free_node(node_t *node) {
+  if (node->radius != 0) {
+    free(node->center);
+  }
   if (node->L) {
     free_node(node->L);
   }
   if (node->R) {
     free_node(node->R);
-  }
-  if (node->radius != 0) {
-    free(node->center);
   }
   free(node);
 }
@@ -83,9 +85,10 @@ double distance2(int n_dims, double *pt1, double *pt2, double *pt3, double *medi
 int get_furthest_point(double **points, long point, int n_dims, long n_set,
                        node_t* ortho_points) {
   long max = point;
+  double *point_point = points[ortho_points[point].point_id];
   double distance, max_distance = 0.0;
   for (long i = 0; i < n_set; i++) {
-    distance = distance_sqrd(n_dims, points[ortho_points[i].point_id], points[ortho_points[point].point_id], &ortho_points[i]);
+    distance = distance_sqrd(n_dims, points[ortho_points[i].point_id], point_point, &ortho_points[i]);
     if (max_distance < distance) {
       max = i;
       max_distance = distance;
@@ -164,17 +167,18 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   /*
    * Get furthest points
    */
-  long a = 0;
-  long b = 1;
-  a = get_furthest_point(points, 0, n_dims, n_set, ortho_points);
-  b = get_furthest_point(points, a, n_dims, n_set, ortho_points);
+  long a = get_furthest_point(points, 0, n_dims, n_set, ortho_points);
+  long b = get_furthest_point(points, a, n_dims, n_set, ortho_points);
+
+  double *point_a = points[ortho_points[a].point_id];
+  double *point_b = points[ortho_points[b].point_id];
 
   for (int i = 0; i < n_set; i++) {
     double projection = 0.0;
     for (int d = 0; d < n_dims; d++) {
-      projection += ortho_points[i].center[d] * (points[ortho_points[b].point_id][d] - points[ortho_points[a].point_id][d]);
+      projection += ortho_points[i].center[d] * (point_b[d] - point_a[d]);
     }
-    ortho_points[i].center[0] = projection * (points[ortho_points[b].point_id][0] - points[ortho_points[a].point_id][0]);
+    ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
   }
 
   /*
