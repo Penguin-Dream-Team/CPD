@@ -106,29 +106,15 @@ int get_furthest_point(double **points, long point, int n_dims, long n_set,
 }
 
 void calc_ortho_projection(double **points, int n_set, int n_dims, long index_a, long index_b, long index_p1, long index_p2, node_t *ortho_points) {
-  double top_inner_product1 = 0;
-  double top_inner_product2 = 0;
-  double bot_inner_product = 0;
-
-  for (int i = 0; i < n_dims; i++) {
-    double *value_a = &points[index_a][i];
-    double *value_b = &points[index_b][i];
-    double *value_p1 = &points[index_p1][i];
-    double *value_p2 = &points[index_p2][i];
-    double b_minus_a = *value_b - *value_a;
-    top_inner_product1 += (*value_p1 - *value_a) * b_minus_a;
-    top_inner_product2 += (*value_p2 - *value_a) * b_minus_a;
-    bot_inner_product += b_minus_a * b_minus_a;
-  }
-
-  double inner_product1 = top_inner_product1 / bot_inner_product;
-  double inner_product2 = top_inner_product2 / bot_inner_product;
-
-  for (int i = 0; i < n_dims; i++) {
-    double *value_a = &points[index_a][i];
-    double *value_b = &points[index_b][i];
-    ortho_points[n_set / 2].center[i] = inner_product1 * (*value_b - *value_a) + *value_a;
-    ortho_points[n_set / 2 - 1].center[i] = inner_product2 * (*value_b - *value_a) + *value_a;
+  double *point_a = points[index_a];
+  double *point_b = points[index_b];
+  double inner_product1 = (ortho_points[n_set / 2].center[0] - point_a[0]) / (point_b[0] - point_a[0]);
+  double inner_product2 = (ortho_points[n_set / 2 - 1].center[0] - point_a[0]) / (point_b[0] - point_a[0]);
+  for (int i = 1; i < n_dims; i++) {
+    double value_a = point_a[i];
+    double value_b = point_b[i];
+    ortho_points[n_set / 2].center[i] = inner_product1 * (value_b - value_a) + value_a;
+    ortho_points[n_set / 2 - 1].center[i] = inner_product2 * (value_b - value_a) + value_a;
   }
 }
 
@@ -139,29 +125,38 @@ int cmpfunc (const void *point_1, const void *point_2) {
   if (!p1->projection_done && !p2->projection_done) {
     double projection1 = 0.0;
     double projection2 = 0.0;
+    double b_minus_a_sum = 0.0;
     for (int d = 0; d < dims; d++) {
-      projection1 += p1->center[d] * (point_b[d] - point_a[d]);
-      projection2 += p2->center[d] * (point_b[d] - point_a[d]);
+      double b_minus_a = point_b[d] - point_a[d];
+      b_minus_a_sum += b_minus_a;
+      projection1 += p1->center[d] * b_minus_a;
+      projection2 += p2->center[d] * b_minus_a;
     }
-    p1->center[0] = projection1 * (point_b[0] - point_a[0]);
+    p1->center[0] = projection1 / b_minus_a_sum * (point_b[0] - point_a[0]) + point_a[0];
     *(bool*)(&(p1->projection_done)) = true;
-    p2->center[0] = projection2 * (point_b[0] - point_a[0]);
+    p2->center[0] = projection2 / b_minus_a_sum * (point_b[0] - point_a[0]) + point_a[0];
     *(bool*)(&(p2->projection_done)) = true;
 
   } else if (!p1->projection_done) {
     double projection1 = 0.0;
+    double b_minus_a_sum = 0.0;
     for (int d = 0; d < dims; d++) {
-      projection1 += p1->center[d] * (point_b[d] - point_a[d]);
+      double b_minus_a = point_b[d] - point_a[d];
+      b_minus_a_sum += b_minus_a;
+      projection1 += p1->center[d] * b_minus_a;
     }
-    p1->center[0] = projection1 * (point_b[0] - point_a[0]);
+    p1->center[0] = projection1 / b_minus_a_sum * (point_b[0] - point_a[0]) + point_a[0];
     *(bool*)(&(p1->projection_done)) = true;
 
   } else if (!p2->projection_done) {
     double projection2 = 0.0;
+    double b_minus_a_sum = 0.0;
     for (int d = 0; d < dims; d++) {
-      projection2 += p2->center[d] * (point_b[d] - point_a[d]);
+      double b_minus_a = point_b[d] - point_a[d];
+      b_minus_a_sum += b_minus_a;
+      projection2 += p2->center[d] * b_minus_a;
     }
-    p2->center[0] = projection2 * (point_b[0] - point_a[0]);
+    p2->center[0] = projection2 / b_minus_a_sum * (point_b[0] - point_a[0]) + point_a[0];
     *(bool*)(&(p2->projection_done)) = true;
   }
 
