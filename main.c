@@ -316,7 +316,8 @@ int main(int argc, char *argv[]) {
   exec_time += omp_get_wtime();
   fprintf(stderr, "%lf\n", exec_time);
 
-  print_tree(tree, n_dims, points);
+  if (n_dims < 1000)
+    print_tree(tree, n_dims, points);
 
   free(ortho_points);
   free_node(tree);
