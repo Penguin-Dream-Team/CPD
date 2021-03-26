@@ -3,8 +3,8 @@
 #    A. Delis (ad@di.uoa.gr)
 #
 
-OBJS      = main.o gen_points.o
-SOURCE    = main.c gen_points.c
+OBJS      = ballAlg-omp.o gen_points.o
+SOURCE    = ballAlg-omp.c gen_points.c
 HEADER    = gen_points.h quick_sort.h
 OUT       = ballAlg
 CC        = gcc
@@ -20,8 +20,8 @@ all: $(OBJS)
 
 
 # create/compile the individual files >>separately<<
-main.o: main.c
-	$(CC) $(FLAGS) main.c
+main.o: ballAlg-omp.c
+	$(CC) $(FLAGS) ballAlg-omp.c
 
 ballQuery.o: ballQuery.c
 	$(CC) $(FLAGS) ballQuery.c
