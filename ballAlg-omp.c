@@ -232,10 +232,16 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   
   node_t *tree = create_node(median_point, -1, radius);
   
-tree->L = build_tree(points, n_dims, left_set_count, left_set);
-tree->R = build_tree(points, n_dims, right_set_count, right_set);
-free(left_set);
-free(right_set);
+  #pragma omp parallel sections
+   {
+      #pragma omp section
+      tree->L = build_tree(points, n_dims, left_set_count, left_set);
+      #pragma omp section
+      tree->R = build_tree(points, n_dims, right_set_count, right_set);
+
+   }
+  free(left_set);
+  free(right_set);
 
   return tree;
 }
@@ -308,6 +314,7 @@ node_t *ortho_points;
   int n_dims;
   long n_samples;
   points = get_points(argc, argv, &n_dims, &n_samples);
+  omp_set_nested(0);
 
   /*
    * Get ortho projection of points in line ab
