@@ -44,7 +44,6 @@ void free_node(node_t *node) {
 double distance_sqrd(int n_dims, double *pt1, double *pt2, node_t *ortho_point) {
   double dist = 0.0;
 
-  #pragma omp parallel for
   for (int d = 0; d < n_dims; d++) {
     double tmp = pt1[d] - pt2[d];
     dist += tmp * tmp;
@@ -57,7 +56,6 @@ double distance_sqrd(int n_dims, double *pt1, double *pt2, node_t *ortho_point) 
 double distance_sqrd_med(int n_dims, double *pt1, double *pt2, double *median) {
   double dist = 0.0;
 
-  #pragma omp parallel for
   for (int d = 0; d < n_dims; d++) {
     median[d] = pt2[d];
     dist += (pt1[d] - pt2[d]) * (pt1[d] - pt2[d]);
@@ -69,7 +67,6 @@ double distance_sqrd_med(int n_dims, double *pt1, double *pt2, double *median) {
 double distance_sqrd_med2(int n_dims, double *pt1, double *pt2, double *pt3, double *median) {
   double dist = 0.0;
 
-  #pragma omp parallel for
   for (int d = 0; d < n_dims; d++) {
     median[d] = (pt2[d] + pt3[d]) / 2;
     dist += (pt1[d] - median[d]) * (pt1[d] - median[d]);
@@ -120,7 +117,6 @@ void calc_ortho_projection(double **points, int n_set, int n_dims, long index_a,
   double inner_product1 = top_inner_product1 / bot_inner_product;
   double inner_product2 = top_inner_product2 / bot_inner_product;
 
-  #pragma omp parallel for
   for (int i = 0; i < n_dims; i++) {
     double *value_a = &points[index_a][i];
     double *value_b = &points[index_b][i];
@@ -232,12 +228,19 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   
   node_t *tree = create_node(median_point, -1, radius);
   
-  tree->L = build_tree(points, n_dims, left_set_count, left_set);
-  tree->R = build_tree(points, n_dims, right_set_count, right_set);
+  #pragma omp task 
+  {
+    tree->L = build_tree(points, n_dims, left_set_count, left_set);
+    free(left_set);
+  }
 
-  free(left_set);
-  free(right_set);
+  #pragma omp task 
+  {
+    tree->R = build_tree(points, n_dims, right_set_count, right_set);
+    free(right_set);
+  }
 
+  #pragma omp taskwait
   return tree;
 }
 
@@ -302,6 +305,8 @@ void print_tree(node_t *tree, int n_dims, double **points) {
 int main(int argc, char *argv[]) {
   double exec_time;
 
+  omp_set_num_threads(4);
+  printf("Num Threads: %d\n", omp_get_num_threads());
   exec_time = -omp_get_wtime();
   int n_dims;
   long n_samples;
@@ -312,7 +317,6 @@ int main(int argc, char *argv[]) {
    */
   node_t *ortho_points = malloc(sizeof(node_t) * n_samples);
  
-  #pragma omp parallel for
   for (long i = 0; i < n_samples; i++) {
     ortho_points[i].center = malloc(sizeof(double) * n_dims);
     ortho_points[i].point_id = i;
