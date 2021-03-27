@@ -1,4 +1,4 @@
-// OpenMp version
+// Serial version
 
 #include <math.h>
 #include <stdio.h>
