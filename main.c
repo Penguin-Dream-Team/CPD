@@ -80,6 +80,7 @@ int get_furthest_point(double **points, long point, int n_dims, long n_set,
   long max = point;
   double *point_point = points[ortho_points[point].point_id];
   double distance, max_distance = 0.0;
+
   for (long i = 0; i < n_set; i++) {
     distance = distance_sqrd(n_dims, points[ortho_points[i].point_id], point_point, &ortho_points[i]);
     if (max_distance < distance) {
@@ -90,7 +91,7 @@ int get_furthest_point(double **points, long point, int n_dims, long n_set,
   return max;
 }
 
-void calc_ortho_projection(double **points, int n_set, int n_dims, long index_a, long index_b, long index_p1, long index_p2, node_t *ortho_points) {
+void calc_ortho_projection(double **points, int n_dims, long index_a, long index_b, long index_p1, long index_p2, node_t *ortho_points) {
   double top_inner_product1 = 0;
   double top_inner_product2 = 0;
   double bot_inner_product = 0;
@@ -117,19 +118,6 @@ void calc_ortho_projection(double **points, int n_set, int n_dims, long index_a,
   }
 }
 
-int cmpfunc (const void * pa, const void * pb) {
-  const node_t *a = (const node_t *)pa;
-  const node_t *b = (const node_t *)pb;
-
-  if (a->center[0] > b->center[0]) {
-    return 1;
-  } else if (a->center[0] < b->center[0]) {
-    return -1;
-  } else {
-    return 0;
-  }
-}
-
 node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points) {
   if (n_set == 0) {
     return NULL;
@@ -146,7 +134,7 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
 
     node_t *tree = create_node(median_point, -1, dist);
     
-    if (point1[0] < point2[0]) {
+    if ((point1[0] - point2[0]) < 0) {
       tree->L = create_node(point1, ortho_points[0].point_id, 0);
       tree->R = create_node(point2, ortho_points[1].point_id, 0);
     } else {
@@ -175,16 +163,11 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   }
 
   /*
-  * Sort ortho projection points
-  */
-  //qsort(ortho_points, n_set, sizeof(node_t), cmpfunc);
-
-  /*
    * Get median point which will be the center of the ball
    */
   //double *median_point = malloc(sizeof(double) * n_dims);
   medianValues median_ids = quickSelect(ortho_points, n_set);
-  
+
   /*
    * Get the radius of the ball (largest distance)
    */
@@ -193,7 +176,7 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   long right_set_count;
   
   /* Calc ortho projection of median points */
-  calc_ortho_projection(points, n_set, n_dims, ortho_points[0].point_id, ortho_points[n_set - 1].point_id,
+  calc_ortho_projection(points, n_dims, ortho_points[0].point_id, ortho_points[n_set - 1].point_id,
       median_ids.first, median_ids.second, ortho_points);
 
   left_set_count = n_set / 2;
@@ -210,7 +193,7 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
     distances[1] = distance2(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
   }
 
-  double radius = (distances[0] > distances[1]) ? distances[0] : distances[1];
+  double radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
 
   /*
    * Separate L and R sets
@@ -291,10 +274,10 @@ void print_tree(node_t *tree, int n_dims, double **points) {
 
 int main(int argc, char *argv[]) {
   double exec_time;
-
-  exec_time = -omp_get_wtime();
   int n_dims;
   long n_samples;
+
+  exec_time = -omp_get_wtime();
   double **points = get_points(argc, argv, &n_dims, &n_samples);
 
   /*
