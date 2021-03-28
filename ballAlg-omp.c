@@ -96,28 +96,37 @@ void calc_ortho_projection(double **points, int n_set, int n_dims, long index_a,
   double top_inner_product1 = 0;
   double top_inner_product2 = 0;
   double bot_inner_product = 0;
+  double inner_product1 = 0;
+  double inner_product2 = 0;
 
-  #pragma omp parallel for
-  for (int i = 0; i < n_dims; i++) {
-    double *value_a = &points[index_a][i];
-    double *value_b = &points[index_b][i];
-    double *value_p1 = &points[index_p1][i];
-    double *value_p2 = &points[index_p2][i];
-    double b_minus_a = *value_b - *value_a;
-    top_inner_product1 += (*value_p1 - *value_a) * b_minus_a;
-    top_inner_product2 += (*value_p2 - *value_a) * b_minus_a;
-    bot_inner_product += b_minus_a * b_minus_a;
-  }
+  #pragma omp parallel
+  {
 
-  double inner_product1 = top_inner_product1 / bot_inner_product;
-  double inner_product2 = top_inner_product2 / bot_inner_product;
+    #pragma omp for
+    for (int i = 0; i < n_dims; i++) {
+      double *value_a = &points[index_a][i];
+      double *value_b = &points[index_b][i];
+      double *value_p1 = &points[index_p1][i];
+      double *value_p2 = &points[index_p2][i];
+      double b_minus_a = *value_b - *value_a;
+      top_inner_product1 += (*value_p1 - *value_a) * b_minus_a;
+      top_inner_product2 += (*value_p2 - *value_a) * b_minus_a;
+      bot_inner_product += b_minus_a * b_minus_a;
+    }
 
-  #pragma omp parallel for
-  for (int i = 0; i < n_dims; i++) {
-    double *value_a = &points[index_a][i];
-    double *value_b = &points[index_b][i];
-    ortho_points[n_set / 2].center[i] = inner_product1 * (*value_b - *value_a) + *value_a;
-    ortho_points[n_set / 2 - 1].center[i] = inner_product2 * (*value_b - *value_a) + *value_a;
+    #pragma omp single
+    {
+      inner_product1 = top_inner_product1 / bot_inner_product;
+      inner_product2 = top_inner_product2 / bot_inner_product;
+    }
+
+    #pragma omp for
+    for (int i = 0; i < n_dims; i++) {
+      double *value_a = &points[index_a][i];
+      double *value_b = &points[index_b][i];
+      ortho_points[n_set / 2].center[i] = inner_product1 * (*value_b - *value_a) + *value_a;
+      ortho_points[n_set / 2 - 1].center[i] = inner_product2 * (*value_b - *value_a) + *value_a;
+    }
   }
 }
 
@@ -172,10 +181,11 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   double *point_a = points[ortho_points[a].point_id];
   double *point_b = points[ortho_points[b].point_id];
 
-  #pragma omp parallel for
+  int d;
+  #pragma omp parallel for private(d)
   for (int i = 0; i < n_set; i++) {
     double projection = 0.0;
-    for (int d = 0; d < n_dims; d++) {
+    for (d = 0; d < n_dims; d++) {
       projection += ortho_points[i].center[d] * (point_b[d] - point_a[d]);
     }
     ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
@@ -309,7 +319,6 @@ int main(int argc, char *argv[]) {
   int n_dims;
   long n_samples;
   points = get_points(argc, argv, &n_dims, &n_samples);
-  omp_set_nested(0);
 
   /*
    * Get ortho projection of points in line ab
