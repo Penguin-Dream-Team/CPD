@@ -7,14 +7,7 @@
 #include <omp.h>
 
 #include "gen_points.h"
-
-typedef struct _node {
-  long point_id;
-  double *center;
-  double radius;
-  struct _node *L;
-  struct _node *R;
-} node_t;
+#include "quickSelect.h"
 
 node_t *create_node(double *point, long id, double radius) {
   node_t *node = malloc(sizeof(node_t));
@@ -105,8 +98,8 @@ void calc_ortho_projection(double **points, int n_set, int n_dims, long index_a,
   for (int i = 0; i < n_dims; i++) {
     double *value_a = &points[index_a][i];
     double *value_b = &points[index_b][i];
-    double *value_p1 = &points[index_p1][i];
-    double *value_p2 = &points[index_p2][i];
+    double *value_p1 = &points[ortho_points[index_p1].point_id][i];
+    double *value_p2 = &points[ortho_points[index_p2].point_id][i];
     double b_minus_a = *value_b - *value_a;
     top_inner_product1 += (*value_p1 - *value_a) * b_minus_a;
     top_inner_product2 += (*value_p2 - *value_a) * b_minus_a;
@@ -119,8 +112,8 @@ void calc_ortho_projection(double **points, int n_set, int n_dims, long index_a,
   for (int i = 0; i < n_dims; i++) {
     double *value_a = &points[index_a][i];
     double *value_b = &points[index_b][i];
-    ortho_points[n_set / 2].center[i] = inner_product1 * (*value_b - *value_a) + *value_a;
-    ortho_points[n_set / 2 - 1].center[i] = inner_product2 * (*value_b - *value_a) + *value_a;
+    ortho_points[index_p1].center[i] = inner_product1 * (*value_b - *value_a) + *value_a;
+    ortho_points[index_p2].center[i] = inner_product2 * (*value_b - *value_a) + *value_a;
   }
 }
 
@@ -184,13 +177,14 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   /*
   * Sort ortho projection points
   */
-  qsort(ortho_points, n_set, sizeof(node_t), cmpfunc);
+  //qsort(ortho_points, n_set, sizeof(node_t), cmpfunc);
 
   /*
    * Get median point which will be the center of the ball
    */
-  double *median_point = malloc(sizeof(double) * n_dims);
-
+  //double *median_point = malloc(sizeof(double) * n_dims);
+  medianValues median_ids = quickSelect(ortho_points, n_set);
+  
   /*
    * Get the radius of the ball (largest distance)
    */
@@ -200,19 +194,20 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   
   /* Calc ortho projection of median points */
   calc_ortho_projection(points, n_set, n_dims, ortho_points[0].point_id, ortho_points[n_set - 1].point_id,
-      ortho_points[n_set / 2].point_id, ortho_points[n_set / 2 - 1].point_id, ortho_points);
+      median_ids.first, median_ids.second, ortho_points);
 
+  left_set_count = n_set / 2;
+  right_set_count = n_set / 2;
+
+  double *median_point = malloc(sizeof(double) * n_dims);
   if (n_set % 2 != 0) {
-    distances[0] = distance(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, median_point);
-    distances[1] = distance(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, median_point);
-    left_set_count = n_set / 2;
-    right_set_count = n_set / 2 + 1;
+    distances[0] = distance(n_dims, points[ortho_points[0].point_id], ortho_points[median_ids.first].center, median_point);
+    distances[1] = distance(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[median_ids.first].center, median_point);
+    right_set_count += 1;
 
   } else {
-    distances[0] = distance2(n_dims, points[ortho_points[0].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
-    distances[1] = distance2(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[n_set / 2].center, ortho_points[n_set / 2 - 1].center, median_point);
-    left_set_count = n_set / 2;
-    right_set_count = n_set / 2;
+    distances[0] = distance2(n_dims, points[ortho_points[0].point_id], ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
+    distances[1] = distance2(n_dims, points[ortho_points[n_set - 1].point_id], ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
   }
 
   double radius = (distances[0] > distances[1]) ? distances[0] : distances[1];

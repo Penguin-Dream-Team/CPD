@@ -3,13 +3,13 @@
 #    A. Delis (ad@di.uoa.gr)
 #
 
-OBJS      = ballAlg-omp.o gen_points.o
-SOURCE    = main.c ballAlg-omp.c gen_points.c
+OBJS      = ballAlg-omp.o gen_points.o quickSelect.o
+SOURCE    = main.c ballAlg-omp.c gen_points.c quickSelect.c
 HEADER    = gen_points.h quick_sort.h
 OUT       = ballAlg
 CC        = gcc
-FLAGS     = -c -Wextra -Wall -O3 -fopenmp
-LFLAGS    = -lm -fopenmp -O3 -Wextra -Wall
+FLAGS     = -c -Wextra -Wall -g3 -O3 -fopenmp
+LFLAGS    = -lm -fopenmp -g3 -O3 -Wextra -Wall
 # -g option enables debugging mode 
 # -c flag generates object code for separate files
 
@@ -19,8 +19,8 @@ all: $(OBJS)
 	rm -f $(OBJS)
 
 
-main.o: main.c gen_points.o
-	$(CC) -g main.c gen_points.o -o $(OUT) $(LFLAGS)
+main.o: main.c gen_points.o quickSelect.o
+	$(CC) -g main.c gen_points.o quickSelect.o -o $(OUT) $(LFLAGS)
 	rm -f $(OBJS)
 
 # create/compile the individual files >>separately<<
