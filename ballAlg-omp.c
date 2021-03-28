@@ -96,36 +96,26 @@ void calc_ortho_projection(double **points, int n_dims, long index_a, long index
   double top_inner_product1 = 0;
   double top_inner_product2 = 0;
   double bot_inner_product = 0;
-  double inner_product1 = 0;
-  double inner_product2 = 0;
 
-  #pragma omp parallel
-  {
-    #pragma omp for
-    for (int i = 0; i < n_dims; i++) {
-      double *value_a = &points[index_a][i];
-      double *value_b = &points[index_b][i];
-      double *value_p1 = &points[ortho_points[index_p1].point_id][i];
-      double *value_p2 = &points[ortho_points[index_p2].point_id][i];
-      double b_minus_a = *value_b - *value_a;
-      top_inner_product1 += (*value_p1 - *value_a) * b_minus_a;
-      top_inner_product2 += (*value_p2 - *value_a) * b_minus_a;
-      bot_inner_product += b_minus_a * b_minus_a;
-    }
+  for (int i = 0; i < n_dims; i++) {
+    double *value_a = &points[index_a][i];
+    double *value_b = &points[index_b][i];
+    double *value_p1 = &points[ortho_points[index_p1].point_id][i];
+    double *value_p2 = &points[ortho_points[index_p2].point_id][i];
+    double b_minus_a = *value_b - *value_a;
+    top_inner_product1 += (*value_p1 - *value_a) * b_minus_a;
+    top_inner_product2 += (*value_p2 - *value_a) * b_minus_a;
+    bot_inner_product += b_minus_a * b_minus_a;
+  }
 
-    #pragma omp single
-    {
-      inner_product1 = top_inner_product1 / bot_inner_product;
-      inner_product2 = top_inner_product2 / bot_inner_product;
-    }
+  double inner_product1 = top_inner_product1 / bot_inner_product;
+  double inner_product2 = top_inner_product2 / bot_inner_product;
 
-    #pragma omp for
-    for (int i = 0; i < n_dims; i++) {
-      double *value_a = &points[index_a][i];
-      double *value_b = &points[index_b][i];
-      ortho_points[index_p1].center[i] = inner_product1 * (*value_b - *value_a) + *value_a;
-      ortho_points[index_p2].center[i] = inner_product2 * (*value_b - *value_a) + *value_a;
-    }
+  for (int i = 0; i < n_dims; i++) {
+    double *value_a = &points[index_a][i];
+    double *value_b = &points[index_b][i];
+    ortho_points[index_p1].center[i] = inner_product1 * (*value_b - *value_a) + *value_a;
+    ortho_points[index_p2].center[i] = inner_product2 * (*value_b - *value_a) + *value_a;
   }
 }
 
@@ -317,7 +307,7 @@ int main(int argc, char *argv[]) {
 
   if (n_samples < 1000)
     print_tree(tree, n_dims, points);
-    
+
   free(ortho_points);
   free_node(tree);
   free(points[0]);
