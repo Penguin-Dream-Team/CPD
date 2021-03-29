@@ -5,7 +5,7 @@
 medianValues quickSelect(node_t *ortho_points, long n) 
 {
     medianValues result;
-    long low, high ;
+    long low, high;
     long median;
     long middle, ll, hh;
 
@@ -17,40 +17,42 @@ medianValues quickSelect(node_t *ortho_points, long n)
             return result;
         }
         if (high == low + 1) {  /* Two elements only */
-            result.first = low;
-            result.second = high;
+            if ((ortho_points[low].center[0] - ortho_points[high].center[0]) > 0)
+                ELEM_SWAP(ortho_points[low], ortho_points[high]);
+            result.first = median;
+            result.second = median + 1;
             return result;
         }
 
     /* Find median of low, middle and high items; swap into position low */
     middle = (low + high) / 2;
-    if ((ortho_points[middle].center[0] - ortho_points[high].center[0]) > 0)    ELEM_SWAP(ortho_points[middle], ortho_points[high]) ;
-    if ((ortho_points[low].center[0] - ortho_points[high].center[0]) > 0)       ELEM_SWAP(ortho_points[low], ortho_points[high]) ;
-    if ((ortho_points[middle].center[0] - ortho_points[low].center[0]) > 0)     ELEM_SWAP(ortho_points[middle], ortho_points[low]) ;
+    if ((ortho_points[middle].center[0] - ortho_points[high].center[0]) > 0)    ELEM_SWAP(ortho_points[middle], ortho_points[high]);
+    if ((ortho_points[low].center[0] - ortho_points[high].center[0]) > 0)       ELEM_SWAP(ortho_points[low], ortho_points[high]);
+    if ((ortho_points[middle].center[0] - ortho_points[low].center[0]) > 0)     ELEM_SWAP(ortho_points[middle], ortho_points[low]);
 
     /* Swap low item (now in position middle) into position (low+1) */
-    ELEM_SWAP(ortho_points[middle], ortho_points[low+1]) ;
+    ELEM_SWAP(ortho_points[middle], ortho_points[low + 1]);
 
     /* Nibble from each end towards middle, swapping items when stuck */
     ll = low + 1;
     hh = high;
     for (;;) {
-        do ll++; while ((ortho_points[low].center[0] - ortho_points[ll].center[0]) > 0) ;
-        do hh--; while ((ortho_points[hh].center[0]  - ortho_points[low].center[0]) > 0) ;
+        do ll++; while ((ortho_points[low].center[0] - ortho_points[ll].center[0]) > 0);
+        do hh--; while ((ortho_points[hh].center[0]  - ortho_points[low].center[0]) > 0);
 
         if (hh < ll)
         break;
 
-        ELEM_SWAP(ortho_points[ll], ortho_points[hh]) ;
+        ELEM_SWAP(ortho_points[ll], ortho_points[hh]);
     }
 
     /* Swap middle item (in position low) back into correct position */
-    ELEM_SWAP(ortho_points[low], ortho_points[hh]) ;
+    ELEM_SWAP(ortho_points[low], ortho_points[hh]);
 
     /* Re-set active partition */
-    if (hh <= median)
+    if (hh <= median) 
         low = ll;
-        if (hh >= median)
+    if (hh >= median)
         high = hh - 1;
     }
 }
