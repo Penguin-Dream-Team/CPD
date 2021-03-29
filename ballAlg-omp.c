@@ -174,74 +174,82 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   long right_set_count = n_set / 2;
   node_t *left_set = malloc(sizeof(node_t) * left_set_count);
   node_t *right_set;
-  
-  double *median_point = malloc(sizeof(double) * n_dims);
-  if (n_set % 2 != 0) {
-    right_set_count += 1;
-    right_set = malloc(sizeof(node_t) * right_set_count);
+  node_t *tree;
 
-    double median_before_projection = ortho_points[median_ids.first].center[0];
-    int j = 0, k = 0;
-    #pragma omp parallel for shared(j, k)
-    for (int i = 0; i < n_set; i++) {
-      if ((ortho_points[i].center[0] - median_before_projection) < 0) 
-        left_set[j++] = ortho_points[i];
-      else
-        right_set[k++] = ortho_points[i];
-    }
-  } else {
-    right_set = malloc(sizeof(node_t) * right_set_count);
-
-    double median_before_projection = ortho_points[median_ids.first].center[0];
-    int j = 0, k = 0;
-    #pragma omp parallel for shared(j, k)
-    for (int i = 0; i < n_set; i++) {
-      if ((ortho_points[i].center[0] - median_before_projection) <= 0) 
-        left_set[j++] = ortho_points[i];
-      else
-        right_set[k++] = ortho_points[i];
-    }
-  }
-  
-  node_t *tree = create_node(median_point, -1, -1);
-  
-  #pragma omp task
+  #pragma omp parallel
+  #pragma omp single
   {
-    /* Calc ortho projection of median points */
-    double *p1 = points[ortho_points[median_ids.first].point_id];
-    double *p2 = points[ortho_points[median_ids.second].point_id];
-    calc_ortho_projection(n_dims, point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
+    #pragma omp task depend(out: left_set, right_set)
+    {
+      if (n_set % 2 != 0) {
+        right_set_count += 1;
+        right_set = malloc(sizeof(node_t) * right_set_count);
 
-    /*
-    * Get the radius of the ball (largest distance)
-    */
-    double distances[2] = {0.0, 0.0};
-    if (n_set % 2 != 0) {
-      distances[0] = distance(n_dims, point_a, ortho_points[median_ids.first].center, median_point);
-      distances[1] = distance(n_dims, point_b, ortho_points[median_ids.first].center, median_point);
-      
-    } else {
-      distances[0] = distance2(n_dims, point_a, ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
-      distances[1] = distance2(n_dims, point_b, ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
+        double median_before_projection = ortho_points[median_ids.first].center[0];
+        int j = 0, k = 0;
+        for (int i = 0; i < n_set; i++) {
+          if ((ortho_points[i].center[0] - median_before_projection) < 0)
+            left_set[j++] = ortho_points[i];
+          else 
+            right_set[k++] = ortho_points[i];
+        }
+      } else {
+        right_set = malloc(sizeof(node_t) * right_set_count);
+
+        double median_before_projection = ortho_points[median_ids.first].center[0];
+        int j = 0, k = 0;
+        for (int i = 0; i < n_set; i++) {
+          if ((ortho_points[i].center[0] - median_before_projection) <= 0) 
+            left_set[j++] = ortho_points[i];
+          else 
+            right_set[k++] = ortho_points[i];
+        }
+      }
     }
 
-    tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
+    // Idea - Separar o for do left e right set em duas task, e dão return quando já tiver encontrado todos do set correspondente
+    // Permite que um dos sets acabe primeiro que o outro e avançe para o cálculo do respetivo lado da árvore
+
+    double *median_point = malloc(sizeof(double) * n_dims);
+    tree = create_node(median_point, -1, -1);
+  
+    #pragma omp task
+    {
+      /* Calc ortho projection of median points */
+      double *p1 = points[ortho_points[median_ids.first].point_id];
+      double *p2 = points[ortho_points[median_ids.second].point_id];
+      calc_ortho_projection(n_dims, point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
+
+      /*
+      * Get the radius of the ball (largest distance)
+      */
+      double distances[2] = {0.0, 0.0};
+      if (n_set % 2 != 0) {
+        distances[0] = distance(n_dims, point_a, ortho_points[median_ids.first].center, median_point);
+        distances[1] = distance(n_dims, point_b, ortho_points[median_ids.first].center, median_point);
+        
+      } else {
+        distances[0] = distance2(n_dims, point_a, ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
+        distances[1] = distance2(n_dims, point_b, ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
+      }
+
+      tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
+    }
+
+    #pragma omp task depend(in: left_set)
+    {
+      tree->L = build_tree(points, n_dims, left_set_count, left_set);
+      free(left_set);
+    }
+
+    #pragma omp task depend(in: right_set)
+    {
+      tree->R = build_tree(points, n_dims, right_set_count, right_set);
+      free(right_set);
+    }
+    #pragma omp taskwait
+
   }
-
-  #pragma omp task
-  {
-    tree->L = build_tree(points, n_dims, left_set_count, left_set);
-    free(left_set);
-  }
-
-  #pragma omp task
-  {
-    tree->R = build_tree(points, n_dims, right_set_count, right_set);
-    free(right_set);
-  }
-
-  #pragma omp taskwait
-
   return tree;
 }
 

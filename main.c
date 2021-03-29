@@ -172,7 +172,6 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   node_t *left_set = malloc(sizeof(node_t) * left_set_count);
   node_t *right_set;
   
-  double *median_point = malloc(sizeof(double) * n_dims);
   if (n_set % 2 != 0) {
     right_set_count += 1;
     right_set = malloc(sizeof(node_t) * right_set_count);
@@ -199,6 +198,7 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   /* Calc ortho projection of median points */
   double *p1 = points[ortho_points[median_ids.first].point_id];
   double *p2 = points[ortho_points[median_ids.second].point_id];
+  double *median_point = malloc(sizeof(double) * n_dims);
   calc_ortho_projection(n_dims, point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
 
   /*
