@@ -153,7 +153,7 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
    * Get projections to allow median calc
    */
   int d;
-  //#pragma omp parallel for private(d) 
+  //#pragma omp parallel for private(d)
   for (int i = 0; i < n_set; i++) {
     double projection = 0.0;
     for (d = 0; d < n_dims; d++) {
@@ -177,34 +177,62 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
   node_t *left_set = malloc(sizeof(node_t) * left_set_count);
   node_t *tree = create_node(median_point, -1, -1);
 
-  if (n_set % 2 != 0) {
-    right_set_count += 1;
-    right_set = malloc(sizeof(node_t) * right_set_count);
-
-    double median_before_projection = ortho_points[median_ids.first].center[0];
-    int j = 0, k = 0;
-    for (int i = 0; i < n_set; i++) {
-      if ((ortho_points[i].center[0] - median_before_projection) < 0)
-        left_set[j++] = ortho_points[i];
-      else 
-        right_set[k++] = ortho_points[i];
-    }
-  } else {
-    right_set = malloc(sizeof(node_t) * right_set_count);
-
-    double median_before_projection = ortho_points[median_ids.first].center[0];
-    int j = 0, k = 0;
-    for (int i = 0; i < n_set; i++) {
-      if ((ortho_points[i].center[0] - median_before_projection) <= 0) 
-        left_set[j++] = ortho_points[i];
-      else 
-        right_set[k++] = ortho_points[i];
-    }
-  }
-
   #pragma omp parallel
   #pragma omp single
   {
+    #pragma omp task
+    {
+      if (n_set % 2 != 0) {
+        double median_before_projection = ortho_points[median_ids.first].center[0];
+        long i = 0, j = 0;
+        while (j < left_set_count && i < n_set) {
+          if ((ortho_points[i].center[0] - median_before_projection) < 0)
+            left_set[j++] = ortho_points[i];
+          i++;
+        }
+      } else {
+        double median_before_projection = ortho_points[median_ids.first].center[0];
+        long i = 0, j = 0;
+        while (j < left_set_count && i < n_set) {
+          if ((ortho_points[i].center[0] - median_before_projection) <= 0)
+            left_set[j++] = ortho_points[i];
+          i++;
+        }
+      }
+
+      tree->L = build_tree(points, n_dims, left_set_count, left_set);
+      free(left_set);
+    }
+
+    #pragma omp task 
+    {
+      if (n_set % 2 != 0) {
+        right_set_count += 1;
+        right_set = malloc(sizeof(node_t) * right_set_count);
+
+        double median_before_projection = ortho_points[median_ids.first].center[0];
+        long i = 0, j = 0;
+        while (j < right_set_count && i < n_set) {
+          if ((ortho_points[i].center[0] - median_before_projection) >= 0)
+            right_set[j++] = ortho_points[i];
+          i++;
+        }
+      } else {
+        right_set = malloc(sizeof(node_t) * right_set_count);
+
+        double median_before_projection = ortho_points[median_ids.first].center[0];
+        long i = 0, j = 0;
+        while (j < right_set_count && i < n_set) {
+          if ((ortho_points[i].center[0] - median_before_projection) > 0)
+            right_set[j++] = ortho_points[i];
+          i++;
+        }
+      }
+
+      tree->R = build_tree(points, n_dims, right_set_count, right_set);
+      free(right_set);
+    }
+  
     #pragma omp task
     {
       /* Calc ortho projection of median points */
@@ -228,18 +256,6 @@ node_t *build_tree(double **points, int n_dims, long n_set, node_t* ortho_points
       tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
     }
 
-    #pragma omp task depend(in: left_set)
-    {
-      tree->L = build_tree(points, n_dims, left_set_count, left_set);
-      free(left_set);
-    }
-
-    #pragma omp task depend(in: right_set, right_set_count)
-    {
-      tree->R = build_tree(points, n_dims, right_set_count, right_set);
-      free(right_set);
-    }
-    
     #pragma omp taskwait
 
   }
@@ -316,7 +332,7 @@ int main(int argc, char *argv[]) {
    * Get ortho projection of points in line ab
    */
   node_t *ortho_points = malloc(sizeof(node_t) * n_samples);
-  //#pragma omp parallel for
+  #pragma omp parallel for
   for (long i = 0; i < n_samples; i++) {
     ortho_points[i].center = malloc(sizeof(double) * n_dims);
     ortho_points[i].point_id = i;
