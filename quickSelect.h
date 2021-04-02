@@ -10,4 +10,4 @@ typedef struct {
   long first, second;
 } medianValues;
 
-medianValues quickSelect(node_t *ortho_points, long n);
+medianValues quickSelect(node_t *ortho_points, long start, long end);

@@ -2,14 +2,14 @@
 
 #define ELEM_SWAP(a,b) { register node_t t = (a); (a) = (b); (b) = t; }
 
-medianValues quickSelect(node_t *ortho_points, long n) 
+medianValues quickSelect(node_t *ortho_points, long start, long end) 
 {
     medianValues result;
     long low, high;
     long median;
     long middle, ll, hh;
 
-    low = 0 ; high = n-1 ; median = (low + high) / 2;
+    low = start ; high = end-1 ; median = (low + high) / 2;
     for (;;) {
         if (high <= low) { /* One element only */
             result.first = median;
