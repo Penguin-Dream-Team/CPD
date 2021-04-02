@@ -86,7 +86,7 @@ int get_furthest_point(long point, long start, long end) {
   double *point_point = points[ortho_points[point].point_id];
   double distance, max_distance = 0.0;
 
-  //#pragma omp parallel for
+  //#pragma omp for
   for (long i = start; i < end; i++) {
     distance = distance_sqrd(points[ortho_points[i].point_id], point_point, &ortho_points[i]);
     if (max_distance < distance) {
@@ -158,7 +158,7 @@ node_t *build_tree(long start, long end) {
    * Get projections to allow median calc
    */
   int d;
-  #pragma omp parallel for private(d)
+  //#pragma omp for private(d)
   for (int i = start; i < end; i++) {
     double projection = 0.0;
     for (d = 0; d < n_dims; d++) {
@@ -303,16 +303,18 @@ int main(int argc, char *argv[]) {
    * Get ortho projection of points in line ab
    */
   ortho_points = malloc(sizeof(node_t) * n_samples);
-  #pragma omp parallel for
-  for (long i = 0; i < n_samples; i++) {
-    ortho_points[i].center = malloc(sizeof(double) * n_dims);
-    ortho_points[i].point_id = i;
-  }
-  
   node_t * tree;
-  #pragma omp parallel
-  #pragma omp single
-  tree = build_tree(0, n_samples);
+  #pragma omp parallel 
+  {
+    #pragma omp for
+    for (long i = 0; i < n_samples; i++) {
+      ortho_points[i].center = malloc(sizeof(double) * n_dims);
+      ortho_points[i].point_id = i;
+    }
+    
+    #pragma omp single
+    tree = build_tree(0, n_samples);
+  }
 
   exec_time += omp_get_wtime();
   fprintf(stderr, "%lf\n", exec_time);
