@@ -14,6 +14,7 @@
 double **points;
 node_t *ortho_points;
 int n_dims;
+int layer = 0;
 
 node_t *create_node(double *point, long id, double radius) {
   node_t *node = malloc(sizeof(node_t));
@@ -153,12 +154,18 @@ node_t *build_tree(long start, long end) {
 
   double *point_a = points[ortho_points[a].point_id];
   double *point_b = points[ortho_points[b].point_id];
-
   /*
    * Get projections to allow median calc
    */
   int d;
-  //#pragma omp for private(d)
+  
+  int n_t = omp_get_num_threads();
+  int threads_left = n_t/pow(2,layer);
+  if(threads_left>1) {
+    printf("NUM THREADS: %d, LAYER: %d ", n_t, layer);
+    printf("DO PARALLEL: %d\n", (n_t/pow(2,layer))>1);
+  }
+  #pragma omp parallel for private(d) num_threads(threads_left) if(threads_left>1)
   for (int i = start; i < end; i++) {
     double projection = 0.0;
     for (d = 0; d < n_dims; d++) {
@@ -167,14 +174,16 @@ node_t *build_tree(long start, long end) {
     ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
   }
 
+  layer++;
+
   /*
-   * Get median point which will be the center of the ball
-   */
+  * Get median point which will be the center of the ball
+  */
   medianValues median_ids = quickSelect(ortho_points, start, end);
 
   /*
-   * Separate L and R sets
-   */
+  * Separate L and R sets
+  */
   double *median_point = malloc(sizeof(double) * n_dims);
   node_t *tree = create_node(median_point, -1, -1);
 
@@ -195,41 +204,42 @@ node_t *build_tree(long start, long end) {
   }
 
   ELEM_SWAP(ortho_points[i + 1], ortho_points[high]);
-
-  #pragma omp task
+  #pragma omp parallel 
+  #pragma omp single
   {
-    /* Calc ortho projection of median points */
-    double *p1 = points[ortho_points[median_ids.first].point_id];
-    double *p2 = points[ortho_points[median_ids.second].point_id];
-    calc_ortho_projection(point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
+    #pragma omp task
+    {
+      /* Calc ortho projection of median points */
+      double *p1 = points[ortho_points[median_ids.first].point_id];
+      double *p2 = points[ortho_points[median_ids.second].point_id];
+      calc_ortho_projection(point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
 
-    /*
-    * Get the radius of the ball (largest distance)
-    */
-    double distances[2] = {0.0, 0.0};
-    if ((end - start) % 2 != 0) {
-      distances[0] = distance(point_a, ortho_points[median_ids.first].center, median_point);
-      distances[1] = distance(point_b, ortho_points[median_ids.first].center, median_point);
-      
-    } else {
-      distances[0] = distance2(point_a, ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
-      distances[1] = distance2(point_b, ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
+      /*
+      * Get the radius of the ball (largest distance)
+      */
+      double distances[2] = {0.0, 0.0};
+      if ((end - start) % 2 != 0) {
+        distances[0] = distance(point_a, ortho_points[median_ids.first].center, median_point);
+        distances[1] = distance(point_b, ortho_points[median_ids.first].center, median_point);
+        
+      } else {
+        distances[0] = distance2(point_a, ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
+        distances[1] = distance2(point_b, ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
+      }
+
+      tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
     }
 
-    tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
-  }
+    #pragma omp task
+    {
+      tree->L = build_tree(start, median_ids.second);
+    }
 
-  #pragma omp task
-  {
-    tree->L = build_tree(start, median_ids.second);
+    #pragma omp task
+    {
+      tree->R = build_tree(median_ids.second, end);
+    }
   }
-
-  #pragma omp task
-  {
-    tree->R = build_tree(median_ids.second, end);
-  }
-
-  #pragma omp taskwait
 
   return tree;
 }
@@ -298,23 +308,21 @@ int main(int argc, char *argv[]) {
 
   exec_time = -omp_get_wtime();
   points = get_points(argc, argv, &n_dims, &n_samples);
+  omp_set_nested(0);
 
   /*
    * Get ortho projection of points in line ab
    */
   ortho_points = malloc(sizeof(node_t) * n_samples);
   node_t * tree;
-  #pragma omp parallel 
-  {
-    #pragma omp for
-    for (long i = 0; i < n_samples; i++) {
-      ortho_points[i].center = malloc(sizeof(double) * n_dims);
-      ortho_points[i].point_id = i;
-    }
-    
-    #pragma omp single
-    tree = build_tree(0, n_samples);
+
+  //#pragma omp parallel for
+  for (long i = 0; i < n_samples; i++) {
+    ortho_points[i].center = malloc(sizeof(double) * n_dims);
+    ortho_points[i].point_id = i;
   }
+    
+  tree = build_tree(0, n_samples);
 
   exec_time += omp_get_wtime();
   fprintf(stderr, "%lf\n", exec_time);
