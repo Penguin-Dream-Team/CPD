@@ -324,7 +324,7 @@ node_t *build_tree_parallel(long start, long end, int depth, int threads) {
   ELEM_SWAP(ortho_points[i + 1], ortho_points[high]);
 
   depth++;
-  fprintf(stderr, "%d - %ld => %d\n", threads, end - start, depth);
+  //fprintf(stderr, "%d - %ld => %d\n", threads, end - start, depth);
   #pragma omp parallel
   {
     #pragma omp single 
@@ -464,8 +464,7 @@ int main(int argc, char *argv[]) {
   exec_time += omp_get_wtime();
   fprintf(stderr, "%lf\n", exec_time);
 
-  if (n_samples < 1000)
-    print_tree(tree, n_dims, points);
+  print_tree(tree, n_dims, points);
 
   free(ortho_points);
   free_node(tree);
