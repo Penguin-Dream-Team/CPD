@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "gen_points.h"
+
+#define RANGE 10
+
+extern void print_point(double *, int);
 
 double **create_array_pts(int n_dims, long np)
 {
@@ -60,24 +63,4 @@ double **get_points(int argc, char *argv[], int *n_dims, long *np)
 #endif
 
     return pt_arr;
-}
-
-void print_point(double* point, int n_dims) {
-    print_point_indent(point, n_dims, 1);
-}
-
-void print_point_indent(double* point, int n_dims, int indent) {
-    for(int i = 0; i < n_dims; i++) {
-        for(int t = 0; t < indent; t++) {
-            printf("\t");
-        }
-        printf("Dimension: %d = %f\n", i, point[i]);
-    }
-}
-
-void print_points(double** points, int n_dims, long n_samples) {
-    for(int i = 0; i < n_samples; i++) {
-        printf("Point %d\n", i);
-        print_point(points[i], n_dims);
-    }
 }
