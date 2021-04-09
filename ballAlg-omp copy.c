@@ -139,7 +139,7 @@ void calc_ortho_projection(double *point_a, double *point_b, double *p1, double 
 // not inclusive
 node_t *build_tree(long start, long end) {  
   if (start == end - 1) {  // 1 point
-    return create_node(points[ortho_points[0].point_id], ortho_points[0].point_id, 0);
+    return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
 
   } else if (start == end - 2) {  // 2 points
     double *median_point = malloc(sizeof(double) * n_dims);
@@ -251,7 +251,7 @@ node_t *build_tree(long start, long end) {
 // not inclusive
 node_t *build_tree_parallel(long start, long end, int depth, int threads) {  
   if (start == end - 1) {  // 1 point
-  return create_node(points[ortho_points[0].point_id], ortho_points[0].point_id, 0);
+    return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
 
   } else if (start == end - 2) {  // 2 points
     double *median_point = malloc(sizeof(double) * n_dims);
