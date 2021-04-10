@@ -40,13 +40,12 @@ void free_node(node_t *node) {
   free(node);
 }
 
-double distance_sqrd(double *pt1, double *pt2, node_t *ortho_point) {
+double distance_sqrd(double *pt1, double *pt2) {
   double dist = 0.0;
 
   for (int d = 0; d < n_dims; d++) {
     double tmp = pt1[d] - pt2[d];
     dist += tmp * tmp;
-    ortho_point->center[d] = tmp;
   }
 
   return dist;
@@ -87,7 +86,7 @@ int get_furthest_point(long point, long start, long end) {
   double distance, max_distance = 0.0;
 
   for (long i = start; i < end; i++) {
-    distance = distance_sqrd(points[ortho_points[i].point_id], point_point, &ortho_points[i]);
+    distance = distance_sqrd(points[ortho_points[i].point_id], point_point);
     if (max_distance < distance) {
       max = i;
       max_distance = distance;
@@ -156,11 +155,11 @@ node_t *build_tree(long start, long end) {
   /*
    * Get projections to allow median calc
    */
-  int d;
   for (int i = start; i < end; i++) {
     double projection = 0.0;
-    for (d = 0; d < n_dims; d++) {
-      projection += ortho_points[i].center[d] * (point_b[d] - point_a[d]);
+    double *point = points[ortho_points[i].point_id];
+    for (int d = 0; d < n_dims; d++) {
+      projection += (point[d] - point_a[d]) * (point_b[d] - point_a[d]);
     }
     ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
   }
@@ -176,19 +175,19 @@ node_t *build_tree(long start, long end) {
   double *median_point = malloc(sizeof(double) * n_dims);
   node_t *tree = create_node(median_point, -1, -1);
 
-  long high = end - 1;
+  long high = median_ids.second;
   // pivot (Element to be placed at right position)
   double pivot = ortho_points[high].center[0];  
 
-  long i = (start - 1);  // Index of smaller element and indicates the 
-                          // right position of pivot found so far
+  long i = start - 1;   // Index of smaller element and indicates the 
+                        // right position of pivot found so far
 
   for (long j = start; j <= high - 1; j++) {
     // If current element is smaller than the pivot
-    if (ortho_points[j].center[0] < pivot)
+    if ((ortho_points[j].center[0] - pivot) < 0)
     {
-        i++;    // increment index of smaller element
-        ELEM_SWAP(ortho_points[i], ortho_points[j]);
+      i++;    // increment index of smaller element
+      ELEM_SWAP(ortho_points[i], ortho_points[j]);
     }
   }
 
