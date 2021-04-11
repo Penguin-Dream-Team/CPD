@@ -9,14 +9,14 @@ medianValues quickSelect(node_t *ortho_points, long start, long end)
     long median;
     long middle, ll, hh;
 
-    low = start ; high = end-1 ; median = (low + high) / 2;
+    low = start ; high = end - 1 ; median = (low + high) / 2;
     for (;;) {
-        if (high <= low) { /* One element only */
+        if (high == low + 1) { /* One element only */
             result.first = median;
             result.second = median;
             return result;
         }
-        if (high == low + 1) {  /* Two elements only */
+        if (high <= low) {  /* Two elements only */
             if ((ortho_points[low].center[0] - ortho_points[high].center[0]) > 0)
                 ELEM_SWAP(ortho_points[low], ortho_points[high]);
             result.first = median;
