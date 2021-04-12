@@ -109,25 +109,29 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
     furthest_points[i].max_distance = 0.0;
   }
 
-  #pragma omp parallel for schedule(static) num_threads(threads)
-  for (long i = start; i < end; i++) {
-    double distance = distance_sqrd(points[ortho_points[i].point_id], point_point);
-    /*furthest_point fp = furthest_points[omp_get_thread_num()];
+  #pragma omp parallel num_threads(threads)
+  {
+    furthest_point fp = furthest_points[omp_get_thread_num()];
+    #pragma omp for schedule(static) 
+    for (long i = start; i < end; i++) {
+      double distance = distance_sqrd(points[ortho_points[i].point_id], point_point);
 
-    if (fp.max_distance < distance) {
-      fp.max = i;
-      fp.max_distance = distance;
-    }*/
-    // FIXME Isto dá mal porque está sempre a ir buscar o valor inicial de furthest_points, mas fica bem mais rápido.
-    // É uma questão de consgeuir meter mais eficiente
-    // Verificar o quickSelect - mudei os ifs de retorno porque nos estava a dar ao contrário
-    int num_thread = omp_get_thread_num();
-    furthest_point fp = furthest_points[num_thread];
+      if (fp.max_distance < distance) {
+        fp.max = i;
+        fp.max_distance = distance;
+      }
+      // FIXME Isto dá mal porque está sempre a ir buscar o valor inicial de furthest_points, mas fica bem mais rápido.
+      // É uma questão de consgeuir meter mais eficiente
+      // Verificar o quickSelect - mudei os ifs de retorno porque nos estava a dar ao contrário
+      /*int num_thread = omp_get_thread_num();
+      furthest_point fp = furthest_points[num_thread];
 
-    if (fp.max_distance < distance) {
-      furthest_points[num_thread].max = i;
-      furthest_points[num_thread].max_distance = distance;
+      if (fp.max_distance < distance) {
+        furthest_points[num_thread].max = i;
+        furthest_points[num_thread].max_distance = distance;
+      }*/
     }
+    furthest_points[omp_get_thread_num()] = fp;
   }
 
   long max = point;
@@ -220,6 +224,10 @@ node_t *build_tree(long start, long end) {
   double *median_point = malloc(sizeof(double) * n_dims);
   node_t *tree = create_node(median_point, -1, -1);
 
+  /*fprintf(stderr, "median = %f %f\n", point_median_1.center[0], point_median_2.center[0]);
+  for (int i = start; i < end; i++) {
+    fprintf(stderr, "value at %d = %f\n", i, ortho_points[i].center[0]);
+  }*/
   /*long high = end - 1;
   ELEM_SWAP(ortho_points[median_ids.second], ortho_points[high]);
 
@@ -352,6 +360,11 @@ node_t *build_tree_parallel(long start, long end, int threads) {
    */
   double *median_point = malloc(sizeof(double) * n_dims);
   node_t *tree = create_node(median_point, -1, -1);
+
+  /*fprintf(stderr, "median = %f %f\n", point_median_1.center[0], point_median_2.center[0]);
+  for (int i = start; i < end; i++) {
+    fprintf(stderr, "value at %d = %f\n", i, ortho_points[i].center[0]);
+  }*/
 
   /*long high = end - 1;
   ELEM_SWAP(ortho_points[median_ids.second], ortho_points[high]);
@@ -501,7 +514,7 @@ int main(int argc, char *argv[]) {
    * Get ortho projection of points in line ab
    */
   ortho_points = malloc(sizeof(node_t) * n_samples);
-  furthest_points = malloc(sizeof(furthest_point) * max_threads);
+  furthest_points = malloc((sizeof(furthest_point) + 2048) * max_threads);
   node_t * tree;
  
   #pragma omp parallel for 

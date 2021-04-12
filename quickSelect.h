@@ -11,3 +11,5 @@ typedef struct {
 } medianValues;
 
 medianValues quickSelect(node_t *ortho_points, long start, long end);
+medianValues quickSelectEven(node_t *ortho_points, long start, long end);
+medianValues quickSelectOdd(node_t *ortho_points, long start, long end);
