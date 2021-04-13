@@ -31,7 +31,7 @@ medianValues quickSelectEven(node_t *ortho_points, long start, long end) {
                 return result;
             }
         }
-
+    
     /* Find median of low, middle and high items; swap into position low */
     middle = (low + high) / 2;
     if ((ortho_points[middle].center[0] - ortho_points[high].center[0]) > 0)    ELEM_SWAP(ortho_points[middle], ortho_points[high]);

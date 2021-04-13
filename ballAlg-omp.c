@@ -332,20 +332,12 @@ node_t *build_tree_parallel(long start, long end, int threads) {
   */
   #pragma omp parallel for num_threads(threads)
   for (int i = start; i < end; i++) {
-    double top_inner_product = 0.0;
-    double bot_inner_product = 0.0;
+    double projection = 0.0;
     double *point = points[ortho_points[i].point_id];
     for (int d = 0; d < n_dims; d++) {
-      double b_minus_a = (point_b[d] - point_a[d]);
-      top_inner_product += (point[d] - point_a[d]) * b_minus_a;
-      bot_inner_product += b_minus_a * b_minus_a;
+      projection += (point[d] - point_a[d]) * (point_b[d] - point_a[d]);
     }
-
-    double inner_product = top_inner_product / bot_inner_product;
-
-    for (int d = 0; d < n_dims; d++) {
-      ortho_points[i].center[d] = inner_product * (point_b[d] - point_a[d]) + point_a[d];
-    }
+    ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
   }
 
   /*
@@ -394,6 +386,11 @@ node_t *build_tree_parallel(long start, long end, int threads) {
     {
       #pragma omp task
       {
+        /* Calc ortho projection of median points */
+        double *p1 = points[point_median_1.point_id];
+        double *p2 = points[point_median_2.point_id];
+        calc_ortho_projection(point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
+
         /*
         * Get the radius of the ball (largest distance)
         */
