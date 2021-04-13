@@ -2,3 +2,5 @@
 ballAlg
 .ccls
 .vscode
+tests/
+outputs/
