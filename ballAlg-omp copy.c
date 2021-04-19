@@ -120,16 +120,6 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
         fp.max = i;
         fp.max_distance = distance;
       }
-      // FIXME Isto dá mal porque está sempre a ir buscar o valor inicial de furthest_points, mas fica bem mais rápido.
-      // É uma questão de consgeuir meter mais eficiente
-      // Verificar o quickSelect - mudei os ifs de retorno porque nos estava a dar ao contrário
-      /*int num_thread = omp_get_thread_num();
-      furthest_point fp = furthest_points[num_thread];
-
-      if (fp.max_distance < distance) {
-        furthest_points[num_thread].max = i;
-        furthest_points[num_thread].max_distance = distance;
-      }*/
     }
     furthest_points[omp_get_thread_num()] = fp;
   }
@@ -169,7 +159,7 @@ void calc_ortho_projection(double *point_a, double *point_b, double *p1, double 
 // not inclusive
 node_t *build_tree(long start, long end) {  
   if (start == end - 1) {  // 1 point
-    return create_node(points[ortho_points[0].point_id], ortho_points[0].point_id, 0);
+  return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
 
   } else if (start == end - 2) {  // 2 points
     double *median_point = malloc(sizeof(double) * n_dims);
@@ -189,7 +179,7 @@ node_t *build_tree(long start, long end) {
     
     return tree;
   }
-
+  //fprintf(stderr, "thread id = %d\n", omp_get_thread_num());
   /*
    * Get furthest points
    */
@@ -224,32 +214,8 @@ node_t *build_tree(long start, long end) {
   double *median_point = malloc(sizeof(double) * n_dims);
   node_t *tree = create_node(median_point, -1, -1);
 
-  /*fprintf(stderr, "median = %f %f\n", point_median_1.center[0], point_median_2.center[0]);
-  for (int i = start; i < end; i++) {
-    fprintf(stderr, "value at %d = %f\n", i, ortho_points[i].center[0]);
-  }*/
-  /*long high = end - 1;
-  ELEM_SWAP(ortho_points[median_ids.second], ortho_points[high]);
-
-  // pivot (Element to be placed at right position)
-  double pivot = point_median_2.center[0];  
-
-  long i = start - 1;   // Index of smaller element and indicates the 
-                        // right position of pivot found so far
-
-  for (long j = start; j <= high - 1; j++) {
-    // If current element is smaller than the pivot
-    if ((ortho_points[j].center[0] - pivot) < 0)
-    {
-      i++;    // increment index of smaller element
-      ELEM_SWAP(ortho_points[i], ortho_points[j]);
-    }
-  }
-
-  ELEM_SWAP(ortho_points[i + 1], ortho_points[high]);*/
-
-  #pragma omp task
-  {
+  //#pragma omp task
+  //{
     /* Calc ortho projection of median points */
     double *p1 = points[point_median_1.point_id];
     double *p2 = points[point_median_2.point_id];
@@ -269,7 +235,7 @@ node_t *build_tree(long start, long end) {
     }
 
     tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
-  }
+  //}
 
   //#pragma omp task
   //{
@@ -277,14 +243,14 @@ node_t *build_tree(long start, long end) {
     if (start == median_ids.second) { 
       tree->L = NULL; 
     } else {
-      #pragma omp task
+      //#pragma omp task
         tree->L = build_tree(start, median_ids.second);
     }
 
     if (median_ids.second == end) {
       tree->R = NULL;
     } else {
-      #pragma omp task
+      //#pragma omp task
         tree->R = build_tree(median_ids.second, end);
     }
   //}
@@ -297,7 +263,7 @@ node_t *build_tree(long start, long end) {
 // not inclusive
 node_t *build_tree_parallel(long start, long end, int threads) {  
   if (start == end - 1) {  // 1 point
-  return create_node(points[ortho_points[0].point_id], ortho_points[0].point_id, 0);
+  return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
 
   } else if (start == end - 2) {  // 2 points
     double *median_point = malloc(sizeof(double) * n_dims);
@@ -332,26 +298,29 @@ node_t *build_tree_parallel(long start, long end, int threads) {
   */
   #pragma omp parallel for num_threads(threads)
   for (int i = start; i < end; i++) {
-    double top_inner_product = 0.0;
-    double bot_inner_product = 0.0;
+    double projection = 0.0;
     double *point = points[ortho_points[i].point_id];
     for (int d = 0; d < n_dims; d++) {
-      double b_minus_a = (point_b[d] - point_a[d]);
-      top_inner_product += (point[d] - point_a[d]) * b_minus_a;
-      bot_inner_product += b_minus_a * b_minus_a;
+      projection += (point[d] - point_a[d]) * (point_b[d] - point_a[d]);
     }
-
-    double inner_product = top_inner_product / bot_inner_product;
-
-    for (int d = 0; d < n_dims; d++) {
-      ortho_points[i].center[d] = inner_product * (point_b[d] - point_a[d]) + point_a[d];
-    }
+    ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
   }
 
   /*
   * Get median point which will be the center of the ball
   */
+  /*for (int i = start; i < end; i++) {
+    fprintf(stderr, "point %d = %f\n", i, ortho_points[i].center[0]);
+  }*/
   medianValues median_ids = quickSelect(ortho_points, start, end);
+
+  /*fprintf(stderr, "median 1 = %ld\n", median_ids.first);
+  fprintf(stderr, "median 2 = %ld\n", median_ids.second);
+
+  for (int i = start; i < end; i++) {
+    fprintf(stderr, "point %d = %f\n", i, ortho_points[i].center[0]);
+  }*/
+
   node_t point_median_1 = ortho_points[median_ids.first];
   node_t point_median_2 = ortho_points[median_ids.second];
   
@@ -361,76 +330,56 @@ node_t *build_tree_parallel(long start, long end, int threads) {
   double *median_point = malloc(sizeof(double) * n_dims);
   node_t *tree = create_node(median_point, -1, -1);
 
-  /*fprintf(stderr, "median = %f %f\n", point_median_1.center[0], point_median_2.center[0]);
-  for (int i = start; i < end; i++) {
-    fprintf(stderr, "value at %d = %f\n", i, ortho_points[i].center[0]);
-  }*/
+  /* Calc ortho projection of median points */
+  double *p1 = points[point_median_1.point_id];
+  double *p2 = points[point_median_2.point_id];
+  calc_ortho_projection(point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
 
-  /*long high = end - 1;
-  ELEM_SWAP(ortho_points[median_ids.second], ortho_points[high]);
-
-  // pivot (Element to be placed at right position)
-  double pivot = ortho_points[high].center[0];  
-
-  long i = start - 1;   // Index of smaller element and indicates the 
-                        // right position of pivot found so far
-
-  for (long j = start; j <= high - 1; j++) {
-    // If current element is smaller than the pivot
-    if ((ortho_points[j].center[0] - pivot) < 0)
-    {
-      i++;    // increment index of smaller element
-      ELEM_SWAP(ortho_points[i], ortho_points[j]);
-    }
+  /*
+  * Get the radius of the ball (largest distance)
+  */
+  double distances[2] = {0.0, 0.0};
+  if ((end - start) % 2 != 0) {
+    distances[0] = distance(point_a, point_median_1.center, median_point);
+    distances[1] = distance(point_b, point_median_1.center, median_point);
+    
+  } else {
+    distances[0] = distance2(point_a, point_median_1.center, point_median_2.center, median_point);
+    distances[1] = distance2(point_b, point_median_1.center, point_median_2.center, median_point);
   }
 
-  ELEM_SWAP(ortho_points[i + 1], ortho_points[high]);*/
-
-  //depth++;
-  //fprintf(stderr, "%d - %ld => %d\n", threads, end - start, depth);
+  tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
+  
   #pragma omp parallel
   {
     #pragma omp single 
     {
-      #pragma omp task
-      {
-        /*
-        * Get the radius of the ball (largest distance)
-        */
-        double distances[2] = {0.0, 0.0};
-        if ((end - start) % 2 != 0) {
-          distances[0] = distance(point_a, point_median_1.center, median_point);
-          distances[1] = distance(point_b, point_median_1.center, median_point);
-          
-        } else {
-          distances[0] = distance2(point_a, point_median_1.center, point_median_2.center, median_point);
-          distances[1] = distance2(point_b, point_median_1.center, point_median_2.center, median_point);
-        }
-
-        tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
-      }
-
-      //#pragma omp task
-      //{
-        
       if (start == median_ids.second) { 
         tree->L = NULL; 
-      //} else if ((threads / depth) > 1) {
-        //fprintf(stderr, "Going left - %d\n", depth);
-        //#pragma omp task
-          //tree->L = build_tree_parallel(start, median_ids.second, depth, (threads + 1) / 2);
+      } else if (threads > 2) {
+        //fprintf(stderr, "Going left parallel - %d\n", (threads + 1) / 2);
+        #pragma omp task
+          tree->L = build_tree_parallel(start, median_ids.second, (threads + 1) / 2);
       } else {
+        //fprintf(stderr, "Going left serial\n");
         #pragma omp task
           tree->L = build_tree(start, median_ids.second);
       }
 
       if (median_ids.second == end) {
         tree->R = NULL;
-      //} else if ((threads / depth) > 1) {
-        //fprintf(stderr, "Going right - %d\n", depth);
-        //#pragma omp task
-          //tree->R = build_tree_parallel(median_ids.second, end, depth, threads / 2);
+      } else if (threads > 2) {
+        if (threads != 3) {
+          //fprintf(stderr, "Going right parallel - %d\n", threads / 2);
+          #pragma omp task
+            tree->R = build_tree_parallel(median_ids.second, end, threads / 2);
+        } else {
+          //fprintf(stderr, "Going right serial\n");
+          #pragma omp task
+            tree->R = build_tree(median_ids.second, end);
+        }
       } else {
+        //fprintf(stderr, "Going right serial\n");
         #pragma omp task
           tree->R = build_tree(median_ids.second, end);
       }

@@ -125,7 +125,6 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
       // Verificar o quickSelect - mudei os ifs de retorno porque nos estava a dar ao contrário
       /*int num_thread = omp_get_thread_num();
       furthest_point fp = furthest_points[num_thread];
-
       if (fp.max_distance < distance) {
         furthest_points[num_thread].max = i;
         furthest_points[num_thread].max_distance = distance;
@@ -169,7 +168,7 @@ void calc_ortho_projection(double *point_a, double *point_b, double *p1, double 
 // not inclusive
 node_t *build_tree(long start, long end) {  
   if (start == end - 1) {  // 1 point
-    return create_node(points[ortho_points[0].point_id], ortho_points[0].point_id, 0);
+    return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
 
   } else if (start == end - 2) {  // 2 points
     double *median_point = malloc(sizeof(double) * n_dims);
@@ -214,7 +213,13 @@ node_t *build_tree(long start, long end) {
   /*
    * Get median point which will be the center of the ball
    */
+  /*for (int i = start; i < end; i++) {
+    fprintf(stderr, "point %d = %f\n", i, ortho_points[i].center[0]);
+  }*/
   medianValues median_ids = quickSelect(ortho_points, start, end);
+
+  //fprintf(stderr, "median 1 = %ld\n", median_ids.first);
+  //fprintf(stderr, "median 2 = %ld\n", median_ids.second);
   node_t point_median_1 = ortho_points[median_ids.first];
   node_t point_median_2 = ortho_points[median_ids.second];
 
@@ -223,30 +228,6 @@ node_t *build_tree(long start, long end) {
    */
   double *median_point = malloc(sizeof(double) * n_dims);
   node_t *tree = create_node(median_point, -1, -1);
-
-  /*fprintf(stderr, "median = %f %f\n", point_median_1.center[0], point_median_2.center[0]);
-  for (int i = start; i < end; i++) {
-    fprintf(stderr, "value at %d = %f\n", i, ortho_points[i].center[0]);
-  }*/
-  /*long high = end - 1;
-  ELEM_SWAP(ortho_points[median_ids.second], ortho_points[high]);
-
-  // pivot (Element to be placed at right position)
-  double pivot = point_median_2.center[0];  
-
-  long i = start - 1;   // Index of smaller element and indicates the 
-                        // right position of pivot found so far
-
-  for (long j = start; j <= high - 1; j++) {
-    // If current element is smaller than the pivot
-    if ((ortho_points[j].center[0] - pivot) < 0)
-    {
-      i++;    // increment index of smaller element
-      ELEM_SWAP(ortho_points[i], ortho_points[j]);
-    }
-  }
-
-  ELEM_SWAP(ortho_points[i + 1], ortho_points[high]);*/
 
   #pragma omp task
   {
@@ -297,7 +278,7 @@ node_t *build_tree(long start, long end) {
 // not inclusive
 node_t *build_tree_parallel(long start, long end, int threads) {  
   if (start == end - 1) {  // 1 point
-  return create_node(points[ortho_points[0].point_id], ortho_points[0].point_id, 0);
+  return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
 
   } else if (start == end - 2) {  // 2 points
     double *median_point = malloc(sizeof(double) * n_dims);
@@ -340,10 +321,21 @@ node_t *build_tree_parallel(long start, long end, int threads) {
     ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
   }
 
-  /*
+   /*
   * Get median point which will be the center of the ball
   */
+  /*for (int i = start; i < end; i++) {
+    fprintf(stderr, "point %d = %f\n", i, ortho_points[i].center[0]);
+  }*/
   medianValues median_ids = quickSelect(ortho_points, start, end);
+
+  /*fprintf(stderr, "median 1 = %ld\n", median_ids.first);
+  fprintf(stderr, "median 2 = %ld\n", median_ids.second);
+
+  for (int i = start; i < end; i++) {
+    fprintf(stderr, "point %d = %f\n", i, ortho_points[i].center[0]);
+  }*/
+
   node_t point_median_1 = ortho_points[median_ids.first];
   node_t point_median_2 = ortho_points[median_ids.second];
   
@@ -353,33 +345,6 @@ node_t *build_tree_parallel(long start, long end, int threads) {
   double *median_point = malloc(sizeof(double) * n_dims);
   node_t *tree = create_node(median_point, -1, -1);
 
-  /*fprintf(stderr, "median = %f %f\n", point_median_1.center[0], point_median_2.center[0]);
-  for (int i = start; i < end; i++) {
-    fprintf(stderr, "value at %d = %f\n", i, ortho_points[i].center[0]);
-  }*/
-
-  /*long high = end - 1;
-  ELEM_SWAP(ortho_points[median_ids.second], ortho_points[high]);
-
-  // pivot (Element to be placed at right position)
-  double pivot = ortho_points[high].center[0];  
-
-  long i = start - 1;   // Index of smaller element and indicates the 
-                        // right position of pivot found so far
-
-  for (long j = start; j <= high - 1; j++) {
-    // If current element is smaller than the pivot
-    if ((ortho_points[j].center[0] - pivot) < 0)
-    {
-      i++;    // increment index of smaller element
-      ELEM_SWAP(ortho_points[i], ortho_points[j]);
-    }
-  }
-
-  ELEM_SWAP(ortho_points[i + 1], ortho_points[high]);*/
-
-  //depth++;
-  //fprintf(stderr, "%d - %ld => %d\n", threads, end - start, depth);
   #pragma omp parallel
   {
     #pragma omp single 
