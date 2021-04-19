@@ -3,6 +3,7 @@
 import sys
 import os
 
+
 class Node:
     def __init__(self, node_id, left_child_id, right_child_id, radius, center, tree):
         self.node_id = node_id
@@ -13,19 +14,30 @@ class Node:
         self.tree = tree
 
     def __eq__(self, other):
+        result = None
+
         if self.radius != other.radius or self.center != other.center:
-            return False
-        if self.left_child_id == -1 and self.left_child_id != other.left_child_id:
-            return False
-        if self.right_child_id == -1 and self.right_child_id != other.right_child_id:
-            return False
-        
-        if self.right_child_id == -1 and self.right_child_id == other.right_child_id and self.left_child_id == -1 and self.left_child_id == other.left_child_id:
-            return True
-        
+            result = False
+        elif self.left_child_id == -1 and self.left_child_id != other.left_child_id:
+            result = False
+        elif self.right_child_id == -1 and self.right_child_id != other.right_child_id:
+            result = False
+
+        elif self.right_child_id == -1 and self.right_child_id == other.right_child_id and self.left_child_id == -1 and self.left_child_id == other.left_child_id:
+            result = True
+
+        if result == False:
+            print(self.node_id, self.left_child_id,
+                  self.right_child_id, self.radius, self.center)
+            print(other.node_id, other.left_child_id,
+                  other.right_child_id, other.radius, other.center)
+        if not result is None:
+            return result
+
         return (self.left_child_id == -1 or other.left_child_id == -1 or self.tree.nodes[self.left_child_id] == other.tree.nodes[other.left_child_id]) and\
-            (self.right_child_id == -1 or other.right_child_id == -1 or self.tree.nodes[self.right_child_id] == other.tree.nodes[other.right_child_id])
-            
+            (self.right_child_id == -1 or other.right_child_id == -
+             1 or self.tree.nodes[self.right_child_id] == other.tree.nodes[other.right_child_id])
+
 
 class Tree:
     def __init__(self, num_dims, num_nodes):
@@ -35,6 +47,7 @@ class Tree:
 
     def __eq__(self, other):
         return self.nodes[0] == other.nodes[0]
+
 
 def readFile(file):
     with open(file) as f:
@@ -51,9 +64,11 @@ def readFile(file):
             right_child_id = int(line[2])
             radius = line[3]
             center = " ".join(line[4:])
-            tree.nodes[node_id] = Node(node_id, left_child_id, right_child_id, radius, center, tree)
+            tree.nodes[node_id] = Node(
+                node_id, left_child_id, right_child_id, radius, center, tree)
 
     return tree
+
 
 def main():
     if len(sys.argv) != 3:
@@ -74,6 +89,7 @@ def main():
     tree = readFile(file1)
     tree2 = readFile(file2)
     print("Are they equivalent?", tree == tree2)
+
 
 if __name__ == "__main__":
     main()
