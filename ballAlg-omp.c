@@ -51,39 +51,15 @@ double distance_sqrd(double *pt1, double *pt2) {
 
   for (int d = 0; d < n_dims; d++) {
     double tmp = pt1[d] - pt2[d];
+    //fprintf(stderr, "pt1 - pt2 = %f => %f\n", tmp, tmp * tmp);
     dist += tmp * tmp;
   }
 
   return dist;
 }
 
-double distance_sqrd_med(double *pt1, double *pt2, double *median) {
-  double dist = 0.0;
-
-  for (int d = 0; d < n_dims; d++) {
-    median[d] = pt2[d];
-    dist += (pt1[d] - pt2[d]) * (pt1[d] - pt2[d]);
-  }
-
-  return dist;
-}
-
-double distance_sqrd_med2(double *pt1, double *pt2, double *pt3, double *median) {
-  double dist = 0.0;
-
-  for (int d = 0; d < n_dims; d++) {
-    median[d] = (pt2[d] + pt3[d]) / 2;
-    dist += (pt1[d] - median[d]) * (pt1[d] - median[d]);
-  }
-  return dist;
-}
-
-double distance(double *pt1, double *pt2, double *median) {
-  return sqrt(distance_sqrd_med(pt1, pt2, median));
-}
-
-double distance2(double *pt1, double *pt2, double *pt3, double *median) {
-  return sqrt(distance_sqrd_med2(pt1, pt2, pt3, median));
+double distance(double *pt1, double *median) {
+  return sqrt(distance_sqrd(pt1, median));
 }
 
 int get_furthest_point(long point, long start, long end) {
@@ -174,7 +150,12 @@ node_t *build_tree(long start, long end) {
     double *median_point = malloc(sizeof(double) * n_dims);
     double *point1 = points[ortho_points[start].point_id];
     double *point2 = points[ortho_points[end - 1].point_id];
-    double dist = distance2(point1, point1, point2, median_point);
+
+    for (int d = 0; d < n_dims; d++) {
+      median_point[d] = (point1[d] + point2[d]) / 2;
+    }
+    double dist = distance(point1, median_point);
+
 
     node_t *tree = create_node(median_point, -1, dist);
     
@@ -241,13 +222,21 @@ node_t *build_tree(long start, long end) {
     */
     double distances[2] = {0.0, 0.0};
     if ((end - start) % 2 != 0) {
-      distances[0] = distance(point_a, point_median_1.center, median_point);
-      distances[1] = distance(point_b, point_median_1.center, median_point);
-      
+      for (int d = 0; d < n_dims; d++) {
+        median_point[d] = point_median_1.center[d];
+        distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
+        distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
+      }
     } else {
-      distances[0] = distance2(point_a, point_median_1.center, point_median_2.center, median_point);
-      distances[1] = distance2(point_b, point_median_1.center, point_median_2.center, median_point);
+      for (int d = 0; d < n_dims; d++) {
+        median_point[d] = (point_median_1.center[d] + point_median_2.center[d]) / 2;
+        distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
+        distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
+      }
     }
+
+    distances[0] = sqrt(distances[0]);
+    distances[1] = sqrt(distances[1]);
 
     tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
   }
@@ -284,7 +273,11 @@ node_t *build_tree_parallel(long start, long end, int threads) {
     double *median_point = malloc(sizeof(double) * n_dims);
     double *point1 = points[ortho_points[start].point_id];
     double *point2 = points[ortho_points[end - 1].point_id];
-    double dist = distance2(point1, point1, point2, median_point);
+    
+    for (int d = 0; d < n_dims; d++) {
+      median_point[d] = (point1[d] + point2[d]) / 2;
+    }
+    double dist = distance(point1, median_point);
 
     node_t *tree = create_node(median_point, -1, dist);
     
@@ -334,7 +327,9 @@ node_t *build_tree_parallel(long start, long end, int threads) {
 
   for (int i = start; i < end; i++) {
     fprintf(stderr, "point %d = %f\n", i, ortho_points[i].center[0]);
-  }*/
+  }
+  fprintf(stderr, "a = %ld\n", a);
+  fprintf(stderr, "b = %ld\n", b);*/
 
   node_t point_median_1 = ortho_points[median_ids.first];
   node_t point_median_2 = ortho_points[median_ids.second];
@@ -361,14 +356,23 @@ node_t *build_tree_parallel(long start, long end, int threads) {
         */
         double distances[2] = {0.0, 0.0};
         if ((end - start) % 2 != 0) {
-          distances[0] = distance(point_a, point_median_1.center, median_point);
-          distances[1] = distance(point_b, point_median_1.center, median_point);
-          
+          for (int d = 0; d < n_dims; d++) {
+            median_point[d] = point_median_1.center[d];
+            distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
+            distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
+          }
         } else {
-          distances[0] = distance2(point_a, point_median_1.center, point_median_2.center, median_point);
-          distances[1] = distance2(point_b, point_median_1.center, point_median_2.center, median_point);
+          for (int d = 0; d < n_dims; d++) {
+            median_point[d] = (point_median_1.center[d] + point_median_2.center[d]) / 2;
+            distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
+            distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
+          }
         }
 
+        distances[0] = sqrt(distances[0]);
+        distances[1] = sqrt(distances[1]);
+        //fprintf(stderr, "a <-> b = %f\n", distance(point_a, point_b));
+        //fprintf(stderr, "Distances %f and %f = %f\n", distances[0], distances[1], distances[0] + distances[1]);
         tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
       }
 
@@ -490,6 +494,13 @@ int main(int argc, char *argv[]) {
     furthest_points[i].max_distance = -1;
   }
   
+  /*for (int i = 0; i < n_samples; i++) {
+    fprintf(stderr, "Point %d = ", i);
+    for (int d = 0; d < n_dims; d++) {
+      fprintf(stderr, " %f", points[i][d]);
+    }
+    fprintf(stderr, "\n");
+  }*/
   tree = build_tree_parallel(0, n_samples, max_threads);
 
   exec_time += omp_get_wtime();
