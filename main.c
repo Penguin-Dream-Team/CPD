@@ -51,33 +51,8 @@ double distance_sqrd(double *pt1, double *pt2) {
   return dist;
 }
 
-double distance_sqrd_med(double *pt1, double *pt2, double *median) {
-  double dist = 0.0;
-
-  for (int d = 0; d < n_dims; d++) {
-    median[d] = pt2[d];
-    dist += (pt1[d] - pt2[d]) * (pt1[d] - pt2[d]);
-  }
-
-  return dist;
-}
-
-double distance_sqrd_med2(double *pt1, double *pt2, double *pt3, double *median) {
-  double dist = 0.0;
-
-  for (int d = 0; d < n_dims; d++) {
-    median[d] = (pt2[d] + pt3[d]) / 2;
-    dist += (pt1[d] - median[d]) * (pt1[d] - median[d]);
-  }
-  return dist;
-}
-
-double distance(double *pt1, double *pt2, double *median) {
-  return sqrt(distance_sqrd_med(pt1, pt2, median));
-}
-
-double distance2(double *pt1, double *pt2, double *pt3, double *median) {
-  return sqrt(distance_sqrd_med2(pt1, pt2, pt3, median));
+double distance(double *pt1, double *median) {
+  return sqrt(distance_sqrd(pt1, median));
 }
 
 int get_furthest_point(long point, long start, long end) {
@@ -118,17 +93,18 @@ void calc_ortho_projection(double *point_a, double *point_b, double *p1, double 
 
 // not inclusive
 node_t *build_tree(long start, long end) {  
-  if (start == end) {  // FIX ME REMOVE ME
-    return NULL;
-
-  } else if (start == end - 1) {  // 1 point
-    return create_node(points[ortho_points[0].point_id], ortho_points[0].point_id, 0);
+  if (start == end - 1) {  // 1 point
+    return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
 
   } else if (start == end - 2) {  // 2 points
     double *median_point = malloc(sizeof(double) * n_dims);
     double *point1 = points[ortho_points[start].point_id];
     double *point2 = points[ortho_points[end - 1].point_id];
-    double dist = distance2(point1, point1, point2, median_point);
+
+    for (int d = 0; d < n_dims; d++) {
+      median_point[d] = (point1[d] + point2[d]) / 2;
+    }
+    double dist = distance(point1, median_point);
 
     node_t *tree = create_node(median_point, -1, dist);
     
@@ -169,33 +145,18 @@ node_t *build_tree(long start, long end) {
    */
   medianValues median_ids = quickSelect(ortho_points, start, end);
 
+  node_t point_median_1 = ortho_points[median_ids.first];
+  node_t point_median_2 = ortho_points[median_ids.second];
+
   /*
    * Separate L and R sets
    */
   double *median_point = malloc(sizeof(double) * n_dims);
   node_t *tree = create_node(median_point, -1, -1);
 
-  long high = median_ids.second;
-  // pivot (Element to be placed at right position)
-  double pivot = ortho_points[high].center[0];  
-
-  long i = start - 1;   // Index of smaller element and indicates the 
-                        // right position of pivot found so far
-
-  for (long j = start; j <= high - 1; j++) {
-    // If current element is smaller than the pivot
-    if ((ortho_points[j].center[0] - pivot) < 0)
-    {
-      i++;    // increment index of smaller element
-      ELEM_SWAP(ortho_points[i], ortho_points[j]);
-    }
-  }
-
-  ELEM_SWAP(ortho_points[i + 1], ortho_points[high]);
-
   /* Calc ortho projection of median points */
-  double *p1 = points[ortho_points[median_ids.first].point_id];
-  double *p2 = points[ortho_points[median_ids.second].point_id];
+  double *p1 = points[point_median_1.point_id];
+  double *p2 = points[point_median_2.point_id];
   calc_ortho_projection(point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
 
   /*
@@ -203,17 +164,35 @@ node_t *build_tree(long start, long end) {
   */
   double distances[2] = {0.0, 0.0};
   if ((end - start) % 2 != 0) {
-    distances[0] = distance(point_a, ortho_points[median_ids.first].center, median_point);
-    distances[1] = distance(point_b, ortho_points[median_ids.first].center, median_point);
-    
+    for (int d = 0; d < n_dims; d++) {
+      median_point[d] = point_median_1.center[d];
+      distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
+      distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
+    }
   } else {
-    distances[0] = distance2(point_a, ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
-    distances[1] = distance2(point_b, ortho_points[median_ids.first].center, ortho_points[median_ids.second].center, median_point);
+    for (int d = 0; d < n_dims; d++) {
+      median_point[d] = (point_median_1.center[d] + point_median_2.center[d]) / 2;
+      distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
+      distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
+    }
   }
 
+  distances[0] = sqrt(distances[0]);
+  distances[1] = sqrt(distances[1]);
+
   tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
-  tree->L = build_tree(start, median_ids.second);
-  tree->R = build_tree(median_ids.second, end);
+  
+  if (start == median_ids.second) { 
+    tree->L = NULL; 
+  } else {
+    tree->L = build_tree(start, median_ids.second);
+  }
+
+  if (median_ids.second == end) {
+    tree->R = NULL;
+  } else {
+    tree->R = build_tree(median_ids.second, end);
+  }
 
   return tree;
 }
