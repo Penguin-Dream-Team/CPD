@@ -301,40 +301,37 @@ node_t *build_tree_parallel(long start, long end, int threads) {
   double *median_point = malloc(sizeof(double) * n_dims);
   node_t *tree = create_node(median_point, -1, -1);
 
+  /* Calc ortho projection of median points */
+  double *p1 = points[point_median_1.point_id];
+  double *p2 = points[point_median_2.point_id];
+  calc_ortho_projection(point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
+
+  /*
+  * Get the radius of the ball (largest distance)
+  */
+  double distances[2] = {0.0, 0.0};
+  if ((end - start) % 2 != 0) {
+    for (int d = 0; d < n_dims; d++) {
+      median_point[d] = point_median_1.center[d];
+      distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
+      distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
+    }
+  } else {
+    for (int d = 0; d < n_dims; d++) {
+      median_point[d] = (point_median_1.center[d] + point_median_2.center[d]) / 2;
+      distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
+      distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
+    }
+  }
+
+  distances[0] = sqrt(distances[0]);
+  distances[1] = sqrt(distances[1]);
+  tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
+
   #pragma omp parallel
   {
     #pragma omp single 
     {
-      #pragma omp task
-      {
-        /* Calc ortho projection of median points */
-        double *p1 = points[point_median_1.point_id];
-        double *p2 = points[point_median_2.point_id];
-        calc_ortho_projection(point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
-
-        /*
-        * Get the radius of the ball (largest distance)
-        */
-        double distances[2] = {0.0, 0.0};
-        if ((end - start) % 2 != 0) {
-          for (int d = 0; d < n_dims; d++) {
-            median_point[d] = point_median_1.center[d];
-            distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
-            distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
-          }
-        } else {
-          for (int d = 0; d < n_dims; d++) {
-            median_point[d] = (point_median_1.center[d] + point_median_2.center[d]) / 2;
-            distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
-            distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
-          }
-        }
-
-        distances[0] = sqrt(distances[0]);
-        distances[1] = sqrt(distances[1]);
-        tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
-      }
-
       if (start == median_ids.second) { 
         tree->L = NULL; 
       } else if (threads > 2) {
