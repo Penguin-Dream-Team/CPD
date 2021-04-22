@@ -181,7 +181,7 @@ node_t *build_tree(long start, long end) {
   distances[1] = sqrt(distances[1]);
 
   tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
-  
+
   if (start == median_ids.second) { 
     tree->L = NULL; 
   } else {
@@ -277,8 +277,7 @@ int main(int argc, char *argv[]) {
   exec_time += omp_get_wtime();
   fprintf(stderr, "%lf\n", exec_time);
 
-  if (n_samples < 1000)
-    print_tree(tree, n_dims, points);
+  print_tree(tree, n_dims, points);
 
   free(ortho_points);
   free_node(tree);

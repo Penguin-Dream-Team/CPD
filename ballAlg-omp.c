@@ -18,7 +18,6 @@ typedef struct {
 
 double **points;
 node_t *ortho_points;
-furthest_point* furthest_points;
 int n_dims;
 
 node_t *create_node(double *point, long id, double radius) {
@@ -78,12 +77,8 @@ int get_furthest_point(long point, long start, long end) {
 
 int get_furthest_point_parallel(long point, long start, long end, int threads) {
   double *point_point = points[ortho_points[point].point_id];
-
-  for (int i = 0; i < threads; i++) {
-    furthest_points[i].max = point;
-    furthest_points[i].max_distance = 0.0;
-  }
-
+  furthest_point *furthest_points = malloc((sizeof(furthest_point) + 2048) * threads);
+  
   #pragma omp parallel num_threads(threads)
   {
     furthest_point fp = furthest_points[omp_get_thread_num()];
@@ -435,18 +430,12 @@ int main(int argc, char *argv[]) {
    * Get ortho projection of points in line ab
    */
   ortho_points = malloc(sizeof(node_t) * n_samples);
-  furthest_points = malloc((sizeof(furthest_point) + 2048) * max_threads);
   node_t * tree;
  
   #pragma omp parallel for 
   for (long i = 0; i < n_samples; i++) {
     ortho_points[i].center = malloc(sizeof(double) * n_dims);
     ortho_points[i].point_id = i;
-  }
-
-  for (int i = 0; i < max_threads; i++) {
-    furthest_points[i].max = -1;
-    furthest_points[i].max_distance = -1;
   }
 
   tree = build_tree_parallel(0, n_samples, max_threads);
