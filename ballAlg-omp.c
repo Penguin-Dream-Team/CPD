@@ -75,10 +75,22 @@ int get_furthest_point(long point, long start, long end) {
   return max;
 }
 
+double get_furthest_distance(double *point, long start, long end) {
+  double distance, max_distance = 0.0;
+
+  for (long i = start; i < end; i++) {
+    distance = distance_sqrd(points[ortho_points[i].point_id], point);
+    if ((max_distance - distance) < 0) {
+      max_distance = distance;
+    }
+  }
+  return max_distance;
+}
+
 int get_furthest_point_parallel(long point, long start, long end, int threads) {
   double *point_point = points[ortho_points[point].point_id];
   furthest_point *furthest_points = malloc((sizeof(furthest_point) + 2048) * threads);
-  
+
   #pragma omp parallel num_threads(threads)
   {
     furthest_point fp = furthest_points[omp_get_thread_num()];
@@ -103,6 +115,31 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
     }
   }
   return max;
+}
+
+double get_furthest_distance_parallel(double *point, long start, long end, int threads) {
+  double *furthest_distances = malloc((sizeof(double) + 2048) * threads);
+
+  #pragma omp parallel num_threads(threads)
+  {
+    double fd = furthest_distances[omp_get_thread_num()];
+    #pragma omp for schedule(static) 
+    for (long i = start; i < end; i++) {
+      double distance = distance_sqrd(points[ortho_points[i].point_id], point);
+      if ((fd - distance) < 0) {
+        fd = distance;
+      }
+    }
+    furthest_distances[omp_get_thread_num()] = fd;
+  }
+
+  double max_distance = 0.0;
+  for (int i = 0; i < threads; i++) {
+    if (max_distance < furthest_distances[i]) {
+      max_distance = furthest_distances[i];
+    }
+  }
+  return max_distance;
 }
 
 void calc_ortho_projection(double *point_a, double *point_b, double *p1, double *p2, node_t *ortho_points, int p1_index, int p2_index) {
@@ -197,25 +234,16 @@ node_t *build_tree(long start, long end) {
   /*
   * Get the radius of the ball (largest distance)
   */
-  double distances[2] = {0.0, 0.0};
   if ((end - start) % 2 != 0) {
     for (int d = 0; d < n_dims; d++) {
       median_point[d] = point_median_1.center[d];
-      distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
-      distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
     }
   } else {
     for (int d = 0; d < n_dims; d++) {
       median_point[d] = (point_median_1.center[d] + point_median_2.center[d]) / 2;
-      distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
-      distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
     }
   }
-
-  distances[0] = sqrt(distances[0]);
-  distances[1] = sqrt(distances[1]);
-
-  tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
+  tree->radius = sqrt(get_furthest_distance(median_point, start, end));
     
   if (start == median_ids.second) { 
     tree->L = NULL; 
@@ -304,24 +332,16 @@ node_t *build_tree_parallel(long start, long end, int threads) {
   /*
   * Get the radius of the ball (largest distance)
   */
-  double distances[2] = {0.0, 0.0};
   if ((end - start) % 2 != 0) {
     for (int d = 0; d < n_dims; d++) {
       median_point[d] = point_median_1.center[d];
-      distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
-      distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
     }
   } else {
     for (int d = 0; d < n_dims; d++) {
       median_point[d] = (point_median_1.center[d] + point_median_2.center[d]) / 2;
-      distances[0] += (point_a[d] - median_point[d]) * (point_a[d] - median_point[d]);
-      distances[1] += (point_b[d] - median_point[d]) * (point_b[d] - median_point[d]);
     }
   }
-
-  distances[0] = sqrt(distances[0]);
-  distances[1] = sqrt(distances[1]);
-  tree->radius = ((distances[0] - distances[1]) > 0) ? distances[0] : distances[1];
+  tree->radius = sqrt(get_furthest_distance_parallel(median_point, start, end, threads));
 
   #pragma omp parallel
   {
