@@ -57,10 +57,10 @@ double **get_points(int argc, char *argv[], int *n_dims, long *np)
         for(j = 0; j < *n_dims; j++)
             pt_arr[i][j] = RANGE * ((double) random()) / RAND_MAX;
 
-#ifdef DEBUG
+    #ifdef DEBUG
     for(i = 0; i < *np; i++)
         print_point(pt_arr[i], *n_dims);
-#endif
+    #endif
 
     return pt_arr;
 }

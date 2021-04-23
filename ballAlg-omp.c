@@ -91,10 +91,10 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
     double *point_point = points[ortho_points[point].point_id];
     furthest_point *furthest_points = malloc((sizeof(furthest_point) + 2048) * threads);
 
-#pragma omp parallel num_threads(threads)
+    #pragma omp parallel num_threads(threads)
     {
         furthest_point fp = furthest_points[omp_get_thread_num()];
-#pragma omp for schedule(static) 
+        #pragma omp for schedule(static) 
         for (long i = start; i < end; i++) {
             double distance = distance_sqrd(points[ortho_points[i].point_id], point_point);
 
@@ -120,10 +120,10 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
 double get_furthest_distance_parallel(double *point, long start, long end, int threads) {
     double *furthest_distances = malloc((sizeof(double) + 2048) * threads);
 
-#pragma omp parallel num_threads(threads)
+    #pragma omp parallel num_threads(threads)
     {
         double fd = furthest_distances[omp_get_thread_num()];
-#pragma omp for schedule(static) 
+        #pragma omp for schedule(static) 
         for (long i = start; i < end; i++) {
             double distance = distance_sqrd(points[ortho_points[i].point_id], point);
             if ((fd - distance) < 0) {
@@ -292,7 +292,7 @@ node_t *build_tree_parallel(long start, long end, int threads) {
     /*
      * Get projections to allow median calc
      */
-#pragma omp parallel for num_threads(threads)
+    #pragma omp parallel for num_threads(threads)
     for (int i = start; i < end; i++) {
         double projection = 0.0;
         double *point = points[ortho_points[i].point_id];
@@ -335,32 +335,32 @@ node_t *build_tree_parallel(long start, long end, int threads) {
     }
     tree->radius = sqrt(get_furthest_distance_parallel(median_point, start, end, threads));
 
-#pragma omp parallel
+    #pragma omp parallel
     {
-#pragma omp single 
+        #pragma omp single 
         {
             if (threads > 2) {
-#pragma omp task
+                #pragma omp task
                 tree->L = build_tree_parallel(start, median_ids.second, (threads + 1) / 2);
             } else {
-#pragma omp task
+                #pragma omp task
                 tree->L = build_tree(start, median_ids.second);
             }
 
             if (threads > 2) {
                 if (threads != 3) {
-#pragma omp task
+                    #pragma omp task
                     tree->R = build_tree_parallel(median_ids.second, end, threads / 2);
                 } else {
-#pragma omp task
+                    #pragma omp task
                     tree->R = build_tree(median_ids.second, end);
                 }
             } else {
-#pragma omp task
+                #pragma omp task
                 tree->R = build_tree(median_ids.second, end);
             }    
         }
-#pragma omp taskwait
+        #pragma omp taskwait
     }
     return tree;
 }
@@ -424,7 +424,7 @@ int main(int argc, char *argv[]) {
     ortho_points = malloc(sizeof(node_t) * n_samples);
     node_t * tree;
 
-#pragma omp parallel for 
+    #pragma omp parallel for 
     for (long i = 0; i < n_samples; i++) {
         ortho_points[i].center = malloc(sizeof(double) * n_dims);
         ortho_points[i].point_id = i;
