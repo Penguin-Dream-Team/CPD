@@ -28,7 +28,7 @@ ballAlg-omp.o: ballAlg-omp.c
 	$(CC) $(FLAGS) ballAlg-omp.c
 
 ballQuery.o: ballQuery.c
-	$(CC) $(FLAGS) ballQuery.c
+	$(CC) -g ballQuery.c -o ballQuery $(LFLAGS)
 
 gen_points.o: gen_points.c
 	$(CC) $(FLAGS) gen_points.c
