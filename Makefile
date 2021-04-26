@@ -1,7 +1,7 @@
-OBJS      = ballAlg.o ballQuery.o ballAlg-omp.o gen_points.o quickSelect.o
-SOURCE    = ballAlg.c ballAlg-omp.c gen_points.c quickSelect.c
+OBJS      = ballAlg.o ballQuery.o ballAlg-omp.o ballAlg-mpi.o gen_points.o quickSelect.o
+SOURCE    = ballAlg.c ballAlg-omp.c ballAlg-mpi.c gen_points.c quickSelect.c
 HEADER    = gen_points.h quick_sort.h
-CC        = gcc
+CC        = mpicc
 LFLAGS    = -lm -fopenmp -O3 -Wextra -Wall
 
 all: $(OBJS)
@@ -12,6 +12,9 @@ ballAlg.o: ballAlg.c gen_points.o quickSelect.o
 
 ballAlg-omp.o: ballAlg-omp.c
 	$(CC) ballAlg-omp.c gen_points.o quickSelect.o -o ballAlg-omp $(LFLAGS)
+
+ballAlg-mpi.o: ballAlg-mpi.c
+	$(CC) ballAlg-mpi.c gen_points.o quickSelect.o -o ballAlg-mpi $(LFLAGS)
 
 ballQuery.o: ballQuery.c
 	$(CC) ballQuery.c -o ballQuery $(LFLAGS)
@@ -24,4 +27,4 @@ quickSelect.o: quickSelect.c
 
 # clean house
 clean:
-	rm -f $(OBJS) ballAlg ballAlg-omp ballQuery
+	rm -f $(OBJS) ballAlg ballAlg-omp ballAlg-mpi ballQuery
