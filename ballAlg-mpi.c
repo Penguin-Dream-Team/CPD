@@ -12,9 +12,11 @@
 
 #define ELEM_SWAP(a,b) { register node_t t = (a); (a) = (b); (b) = t; }
 #define WORLD MPI_COMM_WORLD
-#define POINT_TAG 123
-#define ARGS_TAG 321
-
+#define POINT_TAG 100
+#define ARGS_TAG 101
+#define COUNT_TAG 102
+#define PRINT_TAG 103
+#define FOR_TAG 104
 
 typedef struct {
     double max_distance;
@@ -539,24 +541,27 @@ long aux_print_tree(node_t *tree, int n_dims, double **points,
     }
     printf("\n");
 
-    return count + 1;
+    return count + 1;       
 }
 
-void print_tree(node_t *tree, int n_dims, double **points) {
+void print_tree(node_t *tree, int n_dims, double **points, int prev_count) {
     long n_count = 0;
     count_nodes(tree, &n_count);
+    n_count = n_count + prev_count;
     printf("%d %ld\n", n_dims, n_count);
     aux_print_tree(tree, n_dims, points, n_count, 0);
 }
 
 void wait_mpi(int me) {
     node_t *new_ortho_points = malloc(sizeof(node_t) * max_size);
+    MPI_Status statuses[3];
 
+    // Receive Args
     int args[2];
-    MPI_Status statuses[2];
     MPI_Recv(args, 2, MPI_INT, MPI_ANY_SOURCE, ARGS_TAG, WORLD, &statuses[0]);
+
+    // Receive point indexes
     int rec_index[args[0]];
-    //MPI_Recv(&recv_points, max_size, point_type, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
     MPI_Recv(rec_index, args[0], MPI_INT, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
 
     for(int i = 0; i < args[0]; i++){
@@ -568,7 +573,18 @@ void wait_mpi(int me) {
     
     ortho_points = new_ortho_points;
     node_t * tree = build_tree_parallel_mpi(0, args[0], me, args[1], max_threads);
-    print_tree(tree, n_dims, points);
+
+    // Send node count
+    long n_count = 0;
+    count_nodes(tree, &n_count);
+    long node_count[1] = {n_count};
+    MPI_Send(node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
+
+    // Recieve print command
+    int print[1];
+    MPI_Recv(print, 1, MPI_INT, 0, PRINT_TAG, WORLD, &statuses[2]);
+
+    aux_print_tree(tree, n_dims, points, n_count, 0);
 
     MPI_Finalize();
     exit(0);
@@ -612,7 +628,23 @@ int main(int argc, char *argv[]) {
     exec_time += omp_get_wtime();
     fprintf(stderr, "%lf\n", exec_time);
 
-    print_tree(tree, n_dims, points);
+    // Receive node count
+    int node_count = 0;
+    int count[1];
+    MPI_Status statuses[nprocs];
+    for (int i = 1; i < nprocs; i++){
+        count[0] = 0;
+        MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, &statuses[i]);
+        node_count += count[0];
+    }
+
+    // Send print command
+    int print[1] = {1};
+    for (int i = 1; i < nprocs; i++){
+        MPI_Send(print, 1, MPI_INT, i, PRINT_TAG, WORLD);
+    }
+
+    print_tree(tree, n_dims, points, node_count);
 
     free(ortho_points);
     free_node(tree);
