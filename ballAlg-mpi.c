@@ -26,7 +26,6 @@ node_t *ortho_points;
 int n_dims;
 int max_size;
 int max_threads;
-MPI_Datatype point_type;
 
 node_t *create_node(double *point, long id, double radius) {
     node_t *node = malloc(sizeof(node_t));
@@ -51,17 +50,6 @@ void free_node(node_t *node) {
         free_node(node->R);
     }
     free(node);
-}
-
-void define_point(MPI_Datatype *tstype,int n_dims) {
-
-    int blocklens[] = {n_dims};
-    MPI_Aint disps[] = {n_dims * sizeof(double)};
-    //MPI_Aint disps[] = {0};
-    MPI_Datatype types[] = {MPI_DOUBLE};
-
-    MPI_Type_create_struct(1, blocklens, disps, types, tstype);
-    MPI_Type_commit(tstype);
 }
 
 double distance_sqrd(double *pt1, double *pt2) {
@@ -473,7 +461,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
     int diff = (max_processes - process) / 2;
     if (process + 1 < max_processes) {
-        //SEND THE LEFT
+        //SEND THE RIGHT
         int args[] = {end - median_ids.second, max_processes};
         MPI_Send(args, 2, MPI_INT, process + diff, ARGS_TAG, WORLD);
         int points_index[end - median_ids.second];
@@ -481,18 +469,9 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
             points_index[j] = ortho_points[i].point_id;
         }
 
-        printf("SENDING \n");
-        for(int i = 0; i < end - median_ids.second; i++){
-            printf("%d ", points_index[i]);
-        }
-        printf("\n");
-
         MPI_Send(points_index, end - median_ids.second, MPI_INT, process + diff, POINT_TAG, WORLD);
-        //MPI_Send(points, median_ids.second - start, point_type, process + diff, POINT_TAG, WORLD);
-        printf("SENT\n");
 
-        tree->L = build_tree_parallel_mpi(start, median_ids.second, process+ diff, max_processes, threads);
-        //tree->R = build_tree_parallel_mpi(median_ids.second, end, process ,process + diff , threads);
+        tree->L = build_tree_parallel_mpi(start, median_ids.second, 0, diff, threads);
     }
     else {
         #pragma omp parallel
@@ -572,35 +551,22 @@ void print_tree(node_t *tree, int n_dims, double **points) {
 
 void wait_mpi(int me) {
     node_t *new_ortho_points = malloc(sizeof(node_t) * max_size);
-    printf("Node %d is waitin\n" , me);
 
     int args[2];
     MPI_Status statuses[2];
     MPI_Recv(args, 2, MPI_INT, MPI_ANY_SOURCE, ARGS_TAG, WORLD, &statuses[0]);
-    printf("Node %d has args size: %d, max processors: %d\n" ,me, args[0], args[1]);
     int rec_index[args[0]];
     //MPI_Recv(&recv_points, max_size, point_type, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
     MPI_Recv(rec_index, args[0], MPI_INT, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
-    printf("Node %d has args size: %d, max processors: %d\n" ,me, args[0], args[1]);
-    printf("Node %d has recieved points\n" , me);
 
-    printf("RECEIVING \n");
-    for(int i = 0; i <  args[0]; i++){
-    }
-    printf("\n");
-
-    printf("NEW POINTS \n");
     for(int i = 0; i < args[0]; i++){
         new_ortho_points[i].center = malloc(sizeof(double) * n_dims);
         *new_ortho_points[i].center = *points[rec_index[i]];
         new_ortho_points[i].point_id = rec_index[i];
         new_ortho_points[i].center[0] = 69.69;
     }
-    printf("\n");
-    
     
     ortho_points = new_ortho_points;
-    printf("STARTING NEWWWWWWWWWWWWWWWWWWWW\n");
     node_t * tree = build_tree_parallel_mpi(0, args[0], me, args[1], max_threads);
     print_tree(tree, n_dims, points);
 
@@ -625,8 +591,6 @@ int main(int argc, char *argv[]) {
     exec_time = -omp_get_wtime();
     points = get_points(argc, argv, &n_dims, &n_samples);
     max_size = n_samples;
-
-    define_point(&point_type, n_dims);
 
     /*
      * Get ortho projection of points in line ab
