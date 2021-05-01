@@ -461,17 +461,17 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     }
     tree->radius = sqrt(get_furthest_distance_parallel(median_point, start, end, threads));
 
-    int diff = (max_processes - process) / 2;
+    long diff = (max_processes - process) / 2;
     if (process + 1 < max_processes) {
         //SEND THE RIGHT
-        int args[] = {end - median_ids.second, max_processes};
-        MPI_Send(args, 2, MPI_INT, process + diff, ARGS_TAG, WORLD);
-        int points_index[end - median_ids.second];
+        long args[] = {end - median_ids.second, max_processes};
+        MPI_Send(args, 2, MPI_LONG, process + diff, ARGS_TAG, WORLD);
+        long points_index[end - median_ids.second];
         for (int i = median_ids.second, j = 0; i < end; i++, j++){
             points_index[j] = ortho_points[i].point_id;
         }
 
-        MPI_Send(points_index, end - median_ids.second, MPI_INT, process + diff, POINT_TAG, WORLD);
+        MPI_Send(points_index, end - median_ids.second, MPI_LONG, process + diff, POINT_TAG, WORLD);
 
         tree->L = build_tree_parallel_mpi(start, median_ids.second, 0, diff, threads);
     }
@@ -557,12 +557,12 @@ void wait_mpi(int me) {
     MPI_Status statuses[3];
 
     // Receive Args
-    int args[2];
-    MPI_Recv(args, 2, MPI_INT, MPI_ANY_SOURCE, ARGS_TAG, WORLD, &statuses[0]);
+    long args[2];
+    MPI_Recv(args, 2, MPI_LONG, MPI_ANY_SOURCE, ARGS_TAG, WORLD, &statuses[0]);
 
     // Receive point indexes
-    int rec_index[args[0]];
-    MPI_Recv(rec_index, args[0], MPI_INT, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
+    long rec_index[args[0]];
+    MPI_Recv(rec_index, args[0], MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
 
     for(int i = 0; i < args[0]; i++){
         new_ortho_points[i].center = malloc(sizeof(double) * n_dims);
@@ -634,7 +634,7 @@ int main(int argc, char *argv[]) {
         MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, &statuses[i]);
         node_count += count[0];
     }
-    
+
     exec_time += omp_get_wtime();
     fprintf(stderr, "%lf\n", exec_time);
 
