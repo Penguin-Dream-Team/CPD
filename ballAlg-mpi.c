@@ -625,9 +625,6 @@ int main(int argc, char *argv[]) {
 
     tree = build_tree_parallel_mpi(0, n_samples, 0, nprocs, max_threads);
 
-    exec_time += omp_get_wtime();
-    fprintf(stderr, "%lf\n", exec_time);
-
     // Receive node count
     int node_count = 0;
     int count[1];
@@ -637,6 +634,9 @@ int main(int argc, char *argv[]) {
         MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, &statuses[i]);
         node_count += count[0];
     }
+    
+    exec_time += omp_get_wtime();
+    fprintf(stderr, "%lf\n", exec_time);
 
     // Send print command
     int print[1] = {1};
