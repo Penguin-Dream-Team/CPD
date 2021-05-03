@@ -26,7 +26,7 @@ typedef struct {
 double **points;
 node_t *ortho_points;
 int n_dims;
-int max_size;
+long max_size;
 int max_threads;
 
 node_t *create_node(double *point, long id, double radius) {
@@ -466,6 +466,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         //SEND THE RIGHT
         long args[] = {end - median_ids.second, max_processes};
         MPI_Send(args, 2, MPI_LONG, process + diff, ARGS_TAG, WORLD);
+        printf("Node %d, has sent points\n", process);
         long points_index[end - median_ids.second];
         for (int i = median_ids.second, j = 0; i < end; i++, j++){
             points_index[j] = ortho_points[i].point_id;
@@ -571,6 +572,7 @@ void wait_mpi(int me) {
         new_ortho_points[i].center[0] = 69.69;
     }
     
+    printf("Node %d received points\n", me);
     ortho_points = new_ortho_points;
     node_t * tree = build_tree_parallel_mpi(0, args[0], me, args[1], max_threads);
 
@@ -584,7 +586,13 @@ void wait_mpi(int me) {
     int print[1];
     MPI_Recv(print, 1, MPI_INT, 0, PRINT_TAG, WORLD, &statuses[2]);
 
-    aux_print_tree(tree, n_dims, points, n_count, 0);
+    //aux_print_tree(tree, n_dims, points, n_count, 0);
+
+    free(ortho_points);
+    free(new_ortho_points);
+    free_node(tree);
+    free(points[0]);
+    free(points);
 
     MPI_Finalize();
     exit(0);
@@ -644,7 +652,7 @@ int main(int argc, char *argv[]) {
         MPI_Send(print, 1, MPI_INT, i, PRINT_TAG, WORLD);
     }
 
-    print_tree(tree, n_dims, points, node_count);
+    //print_tree(tree, n_dims, points, node_count);
 
     free(ortho_points);
     free_node(tree);
