@@ -589,11 +589,7 @@ void wait_mpi(int me) {
 
     //aux_print_tree(tree, n_dims, points, n_count, 0);
 
-    free(ortho_points);
     free(new_ortho_points);
-    free_node(tree);
-    free(points[0]);
-    free(points);
 
     MPI_Finalize();
     exit(0);
