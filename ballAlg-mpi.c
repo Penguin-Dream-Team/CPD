@@ -28,6 +28,7 @@ node_t *ortho_points;
 int n_dims;
 long max_size;
 int max_threads;
+int sent = 0;
 
 node_t *create_node(double *point, long id, double radius) {
     node_t *node = malloc(sizeof(node_t));
@@ -586,7 +587,7 @@ void wait_mpi(int me) {
     int print[1];
     MPI_Recv(print, 1, MPI_INT, 0, PRINT_TAG, WORLD, &statuses[2]);
 
-    //aux_print_tree(tree, n_dims, points, n_count, 0);
+    aux_print_tree(tree, n_dims, points, n_count, 0);
 
     free(ortho_points);
     free(new_ortho_points);
@@ -633,6 +634,8 @@ int main(int argc, char *argv[]) {
 
     tree = build_tree_parallel_mpi(0, n_samples, 0, nprocs, max_threads);
 
+
+
     // Receive node count
     int node_count = 0;
     int count[1];
@@ -652,7 +655,7 @@ int main(int argc, char *argv[]) {
         MPI_Send(print, 1, MPI_INT, i, PRINT_TAG, WORLD);
     }
 
-    //print_tree(tree, n_dims, points, node_count);
+    print_tree(tree, n_dims, points, node_count);
 
     free(ortho_points);
     free_node(tree);
