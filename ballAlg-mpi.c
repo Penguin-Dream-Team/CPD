@@ -263,8 +263,8 @@ node_t *build_tree(long start, long end) {
 }
 
 // not inclusive
-node_t *build_tree_parallel_omp(long start, long end, int threads) {  
-    printf("FUNCTION OMP Threads: %d, Start: %ld, End: %ld\n", threads, start, end);
+node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {  
+    printf("FUNCTION OMP on Processor: %d, Threads: %d, Start: %ld, End: %ld\n", me, threads, start, end);
 
     if (start == end - 1) {  // 1 point
         return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
@@ -353,7 +353,7 @@ node_t *build_tree_parallel_omp(long start, long end, int threads) {
         {
             if (threads > 2) {
                 #pragma omp task
-                tree->L = build_tree_parallel_omp(start, median_ids.second, (threads + 1) / 2);
+                tree->L = build_tree_parallel_omp(start, median_ids.second, (threads + 1) / 2, me);
             } else {
                 #pragma omp task
                 tree->L = build_tree(start, median_ids.second);
@@ -362,7 +362,7 @@ node_t *build_tree_parallel_omp(long start, long end, int threads) {
             if (threads > 2) {
                 if (threads != 3) {
                     #pragma omp task
-                    tree->R = build_tree_parallel_omp(median_ids.second, end, threads / 2);
+                    tree->R = build_tree_parallel_omp(median_ids.second, end, threads / 2, me);
                 } else {
                     #pragma omp task
                     tree->R = build_tree(median_ids.second, end);
@@ -484,7 +484,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
             {
                 if (threads > 2) {
                     #pragma omp task
-                    tree->L = build_tree_parallel_omp(start, median_ids.second, (threads + 1) / 2);
+                    tree->L = build_tree_parallel_omp(start, median_ids.second, (threads + 1) / 2, process);
                 } else {
                     #pragma omp task
                     tree->L = build_tree(start, median_ids.second);
@@ -493,7 +493,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
                 if (threads > 2) {
                     if (threads != 3) {
                         #pragma omp task
-                        tree->R = build_tree_parallel_omp(median_ids.second, end, threads / 2);
+                        tree->R = build_tree_parallel_omp(median_ids.second, end, threads / 2, process);
                     } else {
                         #pragma omp task
                         tree->R = build_tree(median_ids.second, end);
@@ -629,8 +629,6 @@ int main(int argc, char *argv[]) {
         wait_mpi(me);
 
     tree = build_tree_parallel_mpi(0, n_samples, 0, nprocs, max_threads);
-
-
 
     // Receive node count
     int node_count = 0;
