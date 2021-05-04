@@ -263,7 +263,7 @@ node_t *build_tree(long start, long end) {
 
 // not inclusive
 node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {  
-    fprintf(stderr, "FUNCTION OMP on Processor: %d, Threads: %d, Start: %ld, End: %ld\n", me, threads, start, end);
+    //fprintf(stderr, "FUNCTION OMP on Processor: %d, Threads: %d, Start: %ld, End: %ld\n", me, threads, start, end);
 
     if (start == end - 1) {  // 1 point
         return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
@@ -355,7 +355,7 @@ node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {
                 tree->L = build_tree_parallel_omp(start, median_ids.second, (threads + 1) / 2, me);
             } else {
                 #pragma omp task
-                printf("Process %d going serial \n", me);
+                //printf("Process %d going serial \n", me);
                 tree->L = build_tree(start, median_ids.second);
             }
 
@@ -365,12 +365,12 @@ node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {
                     tree->R = build_tree_parallel_omp(median_ids.second, end, threads / 2, me);
                 } else {
                     #pragma omp task
-                    printf("Process %d going serial \n", me);
+                    //printf("Process %d going serial \n", me);
                     tree->R = build_tree(median_ids.second, end);
                 }
             } else {
                 #pragma omp task
-                printf("Process %d going serial \n", me);
+                //printf("Process %d going serial \n", me);
                 tree->R = build_tree(median_ids.second, end);
             }    
         }
@@ -381,7 +381,7 @@ node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {
 
 // not inclusive
 node_t *build_tree_parallel_mpi(long start, long end, int process, int max_processes, int threads) {  
-    fprintf(stderr, "FUNCTION MPI Process: %d, Max_Process: %d, Threads: %d, Start: %ld, End: %ld\n", process, max_processes, threads, start, end);
+    //fprintf(stderr, "FUNCTION MPI Process: %d, Max_Process: %d, Threads: %d, Start: %ld, End: %ld\n", process, max_processes, threads, start, end);
 
     if (start == end - 1) {  // 1 point
         return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
@@ -408,7 +408,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
         return tree;
     }
-
+    //fprintf(stderr, "PROCESS %d - Getting furthest points\n", process);
     /*
      * Get furthest points
      */
@@ -418,6 +418,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     double *point_a = points[ortho_points[a].point_id];
     double *point_b = points[ortho_points[b].point_id];
 
+    //fprintf(stderr, "PROCESS %d - Getting projections to allow median calc\n", process);
     /*
      * Get projections to allow median calc
      */
@@ -431,6 +432,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
     }
 
+    //fprintf(stderr, "PROCESS %d - Getting median points\n", process);
     /*
      * Get median point which will be the center of the ball
      */
@@ -439,17 +441,20 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     node_t point_median_1 = ortho_points[median_ids.first];
     node_t point_median_2 = ortho_points[median_ids.second];
 
+    //fprintf(stderr, "PROCESS %d - Separate L and R\n", process);
     /*
      * Separate L and R sets
      */
     double *median_point = malloc(sizeof(double) * n_dims);
     node_t *tree = create_node(median_point, -1, -1);
 
+    //fprintf(stderr, "PROCESS %d - Calc ortho projection of median points\n", process);
     /* Calc ortho projection of median points */
     double *p1 = points[point_median_1.point_id];
     double *p2 = points[point_median_2.point_id];
     calc_ortho_projection(point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
 
+    //fprintf(stderr, "PROCESS %d - Getting radius of the ball\n", process);
     /*
      * Get the radius of the ball (largest distance)
      */
@@ -470,16 +475,21 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         long new_max_processes = process + diff;
 
         //SEND THE RIGHT
+        //fprintf(stderr, "Node %d, is going to send args to process %ld\n", process, new_max_processes);
         long args[] = {size, max_processes};
         MPI_Send(args, 2, MPI_LONG, new_max_processes, ARGS_TAG, WORLD);
+        //fprintf(stderr, "Node %d, has sent args to process %ld\n", process, new_max_processes);
 
-        fprintf(stderr, "Node %d, has sent points to process %ld\n", process, new_max_processes);
-        long points_index[size];
+        long *points_index = malloc(sizeof(long) * size);
+
+        //fprintf(stderr, "Node %d, after long[] declaration\n", process);
         for (int i = median_ids.second, j = 0; i < end; i++, j++){
             points_index[j] = ortho_points[i].point_id;
         }
 
+        //fprintf(stderr, "Node %d, is going to send points to process %ld\n", process, new_max_processes);
         MPI_Send(points_index, size, MPI_LONG, new_max_processes, POINT_TAG, WORLD);
+        //fprintf(stderr, "Node %d, has sent points to process %ld\n", process, new_max_processes);
 
         tree->L = build_tree_parallel_mpi(start, median_ids.second, process, new_max_processes, threads);
 
@@ -543,11 +553,11 @@ long aux_print_tree(node_t *tree, int n_dims, double **points,
         count = aux_print_tree(tree->R, n_dims, points, n_count, right_id);
     }
 
-    fprintf(stderr, "%ld %ld %ld %f", my_id, left_id, right_id, tree->radius);
+    printf("%ld %ld %ld %f", my_id, left_id, right_id, tree->radius);
     for (int i = 0; i < n_dims; i++) {
-        fprintf(stderr, " %f", tree->center[i]);
+        printf(" %f", tree->center[i]);
     }
-    fprintf(stderr, "\n");
+    printf("\n");
 
     return count + 1;       
 }
@@ -556,7 +566,7 @@ void print_tree(node_t *tree, int n_dims, double **points, int prev_count) {
     long n_count = 0;
     count_nodes(tree, &n_count);
     n_count = n_count + prev_count;
-    fprintf(stderr, "%d %ld\n", n_dims, n_count);
+    printf("%d %ld\n", n_dims, n_count);
     aux_print_tree(tree, n_dims, points, n_count, 0);
 }
 
@@ -565,20 +575,25 @@ void wait_mpi(int me) {
 
     // Receive Args
     long args[2];
+    //fprintf(stderr, "Node %d, is waiting for args\n", me);
     MPI_Recv(args, 2, MPI_LONG, MPI_ANY_SOURCE, ARGS_TAG, WORLD, &statuses[0]);
+    //fprintf(stderr, "Node %d, received args %ld\n", me, args[0]);
 
     node_t *new_ortho_points = malloc(sizeof(node_t) * args[0]);
+    //fprintf(stderr, "Node %d, after malloc\n", me);
 
     // Receive point indexes
-    long rec_index[args[0]];
+    long *rec_index = malloc(sizeof(long) * args[0]);
+    //fprintf(stderr, "Node %d, is waiting for points\n", me);
     MPI_Recv(rec_index, args[0], MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
+    //fprintf(stderr, "Node %d, received points\n", me);
 
     for(int i = 0; i < args[0]; i++){
         new_ortho_points[i].center = malloc(sizeof(double) * n_dims);
         new_ortho_points[i].point_id = rec_index[i];
     }
     
-    fprintf(stderr, "Node %d received points\n", me);
+    //fprintf(stderr, "Node %d received points\n", me);
     ortho_points = new_ortho_points;
     node_t * tree = build_tree_parallel_mpi(0, args[0], me, args[1], max_threads);
 
