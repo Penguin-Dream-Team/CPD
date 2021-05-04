@@ -356,6 +356,7 @@ node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {
                 tree->L = build_tree_parallel_omp(start, median_ids.second, (threads + 1) / 2, me);
             } else {
                 #pragma omp task
+                printf("Process %d going serial \n", me);
                 tree->L = build_tree(start, median_ids.second);
             }
 
@@ -365,10 +366,12 @@ node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {
                     tree->R = build_tree_parallel_omp(median_ids.second, end, threads / 2, me);
                 } else {
                     #pragma omp task
+                    printf("Process %d going serial \n", me);
                     tree->R = build_tree(median_ids.second, end);
                 }
             } else {
                 #pragma omp task
+                printf("Process %d going serial \n", me);
                 tree->R = build_tree(median_ids.second, end);
             }    
         }
@@ -611,7 +614,7 @@ int main(int argc, char *argv[]) {
 
     exec_time = -omp_get_wtime();
     points = get_points(argc, argv, &n_dims, &n_samples);
-    max_size = n_samples;
+    max_size = n_samples / 2;
 
     /*
      * Get ortho projection of points in line ab
