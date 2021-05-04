@@ -475,7 +475,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
         MPI_Send(points_index, end - median_ids.second, MPI_LONG, process + diff, POINT_TAG, WORLD);
 
-        tree->L = build_tree_parallel_mpi(start, median_ids.second, 0, diff, threads);
+        tree->L = build_tree_parallel_mpi(start, median_ids.second, process, diff, threads);
     }
     else {
         #pragma omp parallel
