@@ -296,8 +296,8 @@ void calc_projections_mpi(long start, long end, int threads, long interval, long
     double *point_a = points[ortho_points[a].point_id];
     double *point_b = points[ortho_points[b].point_id];
     
-    double response[interval];
-
+    double *response = malloc(sizeof(double) * interval);
+    
     /*
      * Get projections to allow median calc
      */
@@ -488,7 +488,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
         calc_projections(start, start + interval, threads, a, b, point_a, point_b);
 
-        double projections_mpi[interval];
+        double *projections_mpi = malloc(sizeof(double) * interval);
         for (int i = process + 1; i < max_processes; i++) {
             MPI_Recv(projections_mpi, interval, MPI_DOUBLE, i, FOR_RESPONSE_TAG, WORLD, &status);
             //printf("Processor %d Recieved projections from processor %d\n", process, i);
