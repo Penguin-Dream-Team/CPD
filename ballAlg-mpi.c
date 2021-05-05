@@ -497,6 +497,12 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
                 ortho_points[j].center[0] = projections_mpi[j - interval * i];
             }
         }
+
+        // Calculate Rest
+        printf("Calculating rest from: %ld to %ld\n", start + interval * nprocs, end);
+        calc_projections(start + interval * nprocs, end, threads, a, b, point_a, point_b);
+
+        
         first = 1;
     }
     else {
