@@ -18,6 +18,8 @@
 #define COUNT_TAG 103
 #define PRINT_TAG 104
 #define FOR_TAG 105
+#define FIRST_FOR_TAG 106
+#define FOR_RESPONSE_TAG 107
 
 typedef struct {
     double max_distance;
@@ -28,6 +30,7 @@ double **points;
 node_t *ortho_points;
 int n_dims, max_threads, sent = 0;
 long max_size;
+int first = 0;
 
 node_t *create_node(double *point, long id, double radius) {
     node_t *node = malloc(sizeof(node_t));
@@ -262,6 +265,59 @@ node_t *build_tree(long start, long end) {
 }
 
 // not inclusive
+void calc_projections(long start, long end, int threads, long a, long b, double *point_a, double *point_b){
+
+    /*
+     * Get projections to allow median calc
+     */
+    #pragma omp parallel for num_threads(threads)
+    for (int i = start; i < end; i++) {
+        double projection = 0.0;
+        double *point = points[ortho_points[i].point_id];
+        for (int d = 0; d < n_dims; d++) {
+            projection += (point[d] - point_a[d]) * (point_b[d] - point_a[d]);
+        }
+        ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
+    }
+}
+
+// not inclusive
+void calc_projections_mpi(long start, long end, int threads, long interval, long processor){
+    //printf("calc projections mpi start %ld, end %ld, interval %ld\n", start, end, interval);
+    
+    /*
+     * Get furthest points
+     */
+    //printf("calculating furthest points\n");
+    long a = get_furthest_point_parallel(start, start, end, threads);
+    long b = get_furthest_point_parallel(a, start, end, threads);
+    //printf("got furthest points\n");
+
+    double *point_a = points[ortho_points[a].point_id];
+    double *point_b = points[ortho_points[b].point_id];
+    
+    double response[interval];
+
+    /*
+     * Get projections to allow median calc
+     */
+    #pragma omp parallel for num_threads(threads)
+    for (long i = start; i < end; i++) {
+        double projection = 0.0;
+        double *point = points[ortho_points[i].point_id];
+        for (int d = 0; d < n_dims; d++) {
+            projection += (point[d] - point_a[d]) * (point_b[d] - point_a[d]);
+        }
+        response[i - start] = projection * (point_b[0] - point_a[0]);
+    }
+
+    //("Sending for response to processor %d \n", processor);
+    MPI_Send(response, interval, MPI_DOUBLE, processor, FOR_RESPONSE_TAG, WORLD);
+
+}
+
+
+// not inclusive
 node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {  
     //fprintf(stderr, "FUNCTION OMP on Processor: %d, Threads: %d, Start: %ld, End: %ld\n", me, threads, start, end);
 
@@ -408,7 +464,12 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
         return tree;
     }
-    //fprintf(stderr, "PROCESS %d - Getting furthest points\n", process);
+    
+
+    int nprocs = max_processes - process;
+    int interval = (end - start) / nprocs;
+    MPI_Status status;
+
     /*
      * Get furthest points
      */
@@ -418,19 +479,31 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     double *point_a = points[ortho_points[a].point_id];
     double *point_b = points[ortho_points[b].point_id];
 
-    //fprintf(stderr, "PROCESS %d - Getting projections to allow median calc\n", process);
-    /*
-     * Get projections to allow median calc
-     */
-    #pragma omp parallel for num_threads(threads)
-    for (int i = start; i < end; i++) {
-        double projection = 0.0;
-        double *point = points[ortho_points[i].point_id];
-        for (int d = 0; d < n_dims; d++) {
-            projection += (point[d] - point_a[d]) * (point_b[d] - point_a[d]);
+    // No need to send points on the first round
+    if (first == 0){
+        long first_for[] = {interval, process};
+        for (int i = process + 1; i < max_processes; i++) {
+            MPI_Send(first_for, 2, MPI_LONG, i, FIRST_FOR_TAG, WORLD);
         }
-        ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
+
+        calc_projections(start, start + interval, threads, a, b, point_a, point_b);
+
+        double projections_mpi[interval];
+        for (int i = process + 1; i < max_processes; i++) {
+            MPI_Recv(projections_mpi, interval, MPI_DOUBLE, i, FOR_RESPONSE_TAG, WORLD, &status);
+            //printf("Processor %d Recieved projections from processor %d\n", process, i);
+            #pragma omp parallel for num_threads(threads)
+            for (int j = interval * i; j < interval * i + interval; j++) {
+                ortho_points[j].center[0] = projections_mpi[j - interval * i];
+            }
+        }
+        first = 1;
     }
+    else {
+        
+        calc_projections(start, end, threads, a, b, point_a, point_b);
+    }
+
 
     //fprintf(stderr, "PROCESS %d - Getting median points\n", process);
     /*
@@ -481,15 +554,11 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         //fprintf(stderr, "Node %d, has sent args to process %ld\n", process, new_max_processes);
 
         long *points_index = malloc(sizeof(long) * size);
-
-        //fprintf(stderr, "Node %d, after long[] declaration\n", process);
         for (int i = median_ids.second, j = 0; i < end; i++, j++){
             points_index[j] = ortho_points[i].point_id;
         }
 
-        //fprintf(stderr, "Node %d, is going to send points to process %ld\n", process, new_max_processes);
         MPI_Send(points_index, size, MPI_LONG, new_max_processes, POINT_TAG, WORLD);
-        //fprintf(stderr, "Node %d, has sent points to process %ld\n", process, new_max_processes);
 
         tree->L = build_tree_parallel_mpi(start, median_ids.second, process, new_max_processes, threads);
 
@@ -570,8 +639,35 @@ void print_tree(node_t *tree, int n_dims, double **points, int prev_count) {
     aux_print_tree(tree, n_dims, points, n_count, 0);
 }
 
-void wait_mpi(int me) {
-    MPI_Status statuses[3];
+void wait_mpi(int me, int begin, int end, int threads) {
+    MPI_Status statuses[4];
+
+    int diff = (end - begin) / 2 + begin;
+
+
+    if (first == 0){
+        //printf("Process %d getting first for\n", me);
+        long first_for_args[2];
+        MPI_Recv(first_for_args, 2, MPI_LONG, MPI_ANY_SOURCE, FIRST_FOR_TAG, WORLD, &statuses[4]);
+        printf("Process %d received first for with interval %ld\n", me, first_for_args[0]);
+        calc_projections_mpi(first_for_args[0] * me, first_for_args[0] * me + first_for_args[0], threads, first_for_args[0], first_for_args[1]);
+        first = 1;
+    }
+    else {
+        printf("Process: %d, receiving for\n", me);
+
+    }
+    
+    if (me < diff){
+        wait_mpi(me, begin, diff, threads);
+    }
+    else if (me > diff){
+        wait_mpi(me, diff, end, threads);
+    }
+
+    
+    printf("Process: %d, receiving points\n", me);
+
 
     // Receive Args
     long args[2];
@@ -611,7 +707,7 @@ void wait_mpi(int me) {
     int print[1];
     MPI_Recv(print, 1, MPI_INT, 0, PRINT_TAG, WORLD, &statuses[2]);
 
-    //aux_print_tree(tree, n_dims, points, n_count, 0);
+    aux_print_tree(tree, n_dims, points, n_count, 0);
 
     free(new_ortho_points);
 
@@ -649,7 +745,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (me != 0)
-        wait_mpi(me);
+        wait_mpi(me, 0, nprocs, max_threads);
 
     tree = build_tree_parallel_mpi(0, n_samples, 0, nprocs, max_threads);
     
@@ -679,7 +775,7 @@ int main(int argc, char *argv[]) {
         MPI_Send(print, 1, MPI_INT, i, PRINT_TAG, WORLD);
     }
 
-    //print_tree(tree, n_dims, points, node_count);
+    print_tree(tree, n_dims, points, node_count);
 
     free(ortho_points);
     free_node(tree);
