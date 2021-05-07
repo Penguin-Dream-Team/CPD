@@ -281,19 +281,15 @@ void calc_projections(long start, long end, int threads, long a, long b, double 
 }
 
 // not inclusive
-void calc_projections_mpi(long start, long end, int threads, long interval, long processor){
+void calc_projections_mpi(long start, long end, int threads, long interval, long processor, long a, long b){
     //printf("calc projections mpi start %ld, end %ld, interval %ld\n", start, end, interval);
     
     /*
      * Get furthest points
      */
-    //printf("calculating furthest points\n");
-    long a = get_furthest_point_parallel(start, start, end, threads);
-    long b = get_furthest_point_parallel(a, start, end, threads);
-    //printf("got furthest points\n");
 
-    double *point_a = points[ortho_points[a].point_id];
-    double *point_b = points[ortho_points[b].point_id];
+    double *point_a = points[a];
+    double *point_b = points[b];
     
     double *response = malloc(sizeof(double) * interval);
     
@@ -479,11 +475,14 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     double *point_a = points[ortho_points[a].point_id];
     double *point_b = points[ortho_points[b].point_id];
 
+    long a1 = ortho_points[a].point_id;
+    long b1 = ortho_points[b].point_id;
+
     // No need to send points on the first round
     if (first == 0){
-        long first_for[] = {interval, process, 0};
+        long first_for[] = {interval, process, 0, a1, b1};
         for (int i = process + 1; i < max_processes; i++) {
-            MPI_Send(first_for, 3, MPI_LONG, i, FOR_TAG, WORLD);
+            MPI_Send(first_for, 5, MPI_LONG, i, FOR_TAG, WORLD);
         }
         first = 1;
     }
@@ -492,14 +491,14 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         //printf("Starting second for\n");
         long *points_indexes[nprocs];
 
-        long for_args[] = {interval, process, 1};
+        long for_args[] = {interval, process, 1, a1, b1};
         for (int i = process + 1; i < max_processes; i++) {
-            MPI_Send(for_args, 3, MPI_LONG, i, FOR_TAG, WORLD);
+            MPI_Send(for_args, 5, MPI_LONG, i, FOR_TAG, WORLD);
             //printf("Sent args to %d\n", i);
 
             points_indexes[i] = malloc(sizeof(long) * interval);
             for (int j = start + interval * i, k = 0; j < start + interval * i + interval; j++, k++){
-                points_indexes[i][k] = ortho_points[k].point_id;
+                points_indexes[i][k] = ortho_points[j].point_id;
             }
             MPI_Send(points_indexes[i], interval, MPI_LONG, i, POINT_TAG, WORLD);
             //printf("Sent points to %d\n", i);
@@ -668,16 +667,18 @@ void wait_mpi(int me, int begin, int end, int threads) {
 
     int diff = (end - begin) / 2 + begin;
     
-    long for_args[3];
-    MPI_Recv(for_args, 3, MPI_LONG, MPI_ANY_SOURCE, FOR_TAG, WORLD, &statuses[4]);
+    long for_args[5];
+    MPI_Recv(for_args, 5, MPI_LONG, MPI_ANY_SOURCE, FOR_TAG, WORLD, &statuses[4]);
 
     long interval = for_args[0];
     int res_process = for_args[1];
     int for_first = for_args[2];
+    int a = for_args[3];
+    int b = for_args[4];
 
     if (for_first == 0){
         //printf("Process %d received first for with interval %ld\n", me, interval);
-        calc_projections_mpi(interval * me, interval * me + interval, threads, interval, res_process);
+        calc_projections_mpi(interval * me, interval * me + interval, threads, interval, res_process, a, b);
     }
     else {
         //printf("Process: %d, receiving second for\n", me);
@@ -696,7 +697,7 @@ void wait_mpi(int me, int begin, int end, int threads) {
         ortho_points = for_ortho_points;
 
         //printf("Process: %d, starting calculations\n", me);
-        calc_projections_mpi(0, interval, threads, interval, res_process);
+        calc_projections_mpi(0, interval, threads, interval, res_process, a, b);
 
     }
     
