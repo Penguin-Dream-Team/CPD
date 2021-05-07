@@ -312,6 +312,7 @@ void calc_projections_mpi(long start, long end, int threads, long interval, long
 
     printf("Sending for response to processor %d \n", processor);
     MPI_Send(response, interval, MPI_DOUBLE, processor, FOR_RESPONSE_TAG, WORLD);
+    printf("Sent for response to processor %d \n", processor);
 
 }
 
@@ -480,9 +481,9 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
     // No need to send points on the first round
     if (first == 0){
-        long first_for[] = {interval, process};
+        long first_for[] = {interval, process, 0};
         for (int i = process + 1; i < max_processes; i++) {
-            MPI_Send(first_for, 2, MPI_LONG, i, FOR_TAG, WORLD);
+            MPI_Send(first_for, 3, MPI_LONG, i, FOR_TAG, WORLD);
         }
         first = 1;
     }
@@ -491,9 +492,9 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         printf("Starting second for\n");
         long *points_indexes[nprocs];
 
-        long for_args[] = {interval, process};
+        long for_args[] = {interval, process, 1};
         for (int i = process + 1; i < max_processes; i++) {
-            MPI_Send(for_args, 2, MPI_LONG, i, FOR_TAG, WORLD);
+            MPI_Send(for_args, 3, MPI_LONG, i, FOR_TAG, WORLD);
             printf("Sent args to %d\n", i);
 
             points_indexes[i] = malloc(sizeof(long) * interval);
@@ -509,18 +510,22 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     calc_projections(start, start + interval, threads, a, b, point_a, point_b);
 
     double *projections_mpi = malloc(sizeof(double) * interval);
+    int new_i = 0;
     for (int i = process + 1; i < max_processes; i++) {
         MPI_Recv(projections_mpi, interval, MPI_DOUBLE, i, FOR_RESPONSE_TAG, WORLD, &status);
-        printf("Processor %d Recieved projections from processor %d\n", process, i);
-        int new_i = i - process;
+        // For whatever reason this print must exis -.-
+        //printf("Processor %d Recieved projections from processor %d\n", process, i);
+        new_i = i - process;
         #pragma omp parallel for num_threads(threads)
         for (int j = start + interval * new_i; j < start + interval * new_i + interval; j++) {
+            printf("Processor %d accessing memory %d\n", process, j - interval * new_i);
             ortho_points[j].center[0] = projections_mpi[j - interval * new_i];
         }
     }
+    free(projections_mpi);
 
     // Calculate Rest
-    printf("Calculating rest from: %ld to %ld on process %d\n", start + interval * nprocs, end, process);
+    //printf("Calculating rest from: %ld to %ld on process %d\n", start + interval * nprocs, end, process);
     calc_projections(start + interval * nprocs, end, threads, a, b, point_a, point_b);
 
 
@@ -663,27 +668,27 @@ void wait_mpi(int me, int begin, int end, int threads) {
 
     int diff = (end - begin) / 2 + begin;
     
-    long for_args[2];
-    MPI_Recv(for_args, 2, MPI_LONG, MPI_ANY_SOURCE, FOR_TAG, WORLD, &statuses[4]);
+    long for_args[3];
+    MPI_Recv(for_args, 3, MPI_LONG, MPI_ANY_SOURCE, FOR_TAG, WORLD, &statuses[4]);
 
     long interval = for_args[0];
     int res_process = for_args[1];
+    int for_first = for_args[2];
 
-    if (first == 0){
-        //printf("Process %d received first for with interval %ld\n", me, interval);
+    if (for_first == 0){
+        printf("Process %d received first for with interval %ld\n", me, interval);
         calc_projections_mpi(interval * me, interval * me + interval, threads, interval, res_process);
-        first = 1;
     }
     else {
         printf("Process: %d, receiving second for\n", me);
 
         //Receiving points
-        node_t *for_ortho_points = malloc(sizeof(node_t) * for_args[0]);
-        long *for_indexes = malloc(sizeof(long) * for_args[0]);
+        node_t *for_ortho_points = malloc(sizeof(node_t) * interval);
+        long *for_indexes = malloc(sizeof(long) * interval);
         MPI_Recv(for_indexes, interval, MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
         printf("Process: %d, received points\n", me);
 
-        for(int i = 0; i < for_args[0]; i++){
+        for(int i = 0; i < interval; i++){
             for_ortho_points[i].center = malloc(sizeof(double) * n_dims);
             for_ortho_points[i].point_id = for_indexes[i];
         }
@@ -703,12 +708,12 @@ void wait_mpi(int me, int begin, int end, int threads) {
     }
 
     
-    printf("Process: %d, receiving points\n", me);
+    //printf("Process: %d, receiving points\n", me);
 
 
     // Receive Args
     long args[2];
-    fprintf(stderr, "Node %d, is waiting for args\n", me);
+    //fprintf(stderr, "Node %d, is waiting for args\n", me);
     MPI_Recv(args, 2, MPI_LONG, MPI_ANY_SOURCE, ARGS_TAG, WORLD, &statuses[0]);
     //fprintf(stderr, "Node %d, received args %ld\n", me, args[0]);
 
@@ -719,7 +724,7 @@ void wait_mpi(int me, int begin, int end, int threads) {
     long *rec_index = malloc(sizeof(long) * args[0]);
     //fprintf(stderr, "Node %d, is waiting for points\n", me);
     MPI_Recv(rec_index, args[0], MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
-    //fprintf(stderr, "Node %d, received points\n", me);
+    fprintf(stderr, "Node %d, received points\n", me);
 
     for(int i = 0; i < args[0]; i++){
         new_ortho_points[i].center = malloc(sizeof(double) * n_dims);
