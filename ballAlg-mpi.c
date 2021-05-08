@@ -707,7 +707,7 @@ long aux_print_tree(node_t *tree, int n_dims, double **points,
     return count;
 }
 
-void print_tree(node_t *tree, int n_dims, double **points, int prev_count, int nprocs) {
+void print_tree_mpi(node_t *tree, int n_dims, double **points, int prev_count, int me) {
     long n_count = 0;
 
     count_nodes(tree, &n_count);
@@ -715,7 +715,18 @@ void print_tree(node_t *tree, int n_dims, double **points, int prev_count, int n
     printf("%d %ld\n", n_dims, n_count);
 
     current_print_proc = 1;
-    aux_print_tree_main_proc(tree, n_dims, points, n_count, 0, nprocs);
+    aux_print_tree_main_proc(tree, n_dims, points, n_count, 0, me);
+}
+
+void print_tree(node_t *tree, int n_dims, double **points, int prev_count) {
+    long n_count = 0;
+
+    count_nodes(tree, &n_count);
+    n_count = n_count + prev_count;
+    printf("%d %ld\n", n_dims, n_count);
+
+    current_print_proc = 1;
+    aux_print_tree(tree, n_dims, points, n_count, 0);
 }
 
 void finish_early_mpi(){
@@ -879,7 +890,7 @@ int main(int argc, char *argv[]) {
 
     if (nprocs / 2 * 3 > n_samples){
         if (me == 0) {
-            printf("NO MPI \n");
+            //printf("NO MPI \n");
 
             tree = build_tree_parallel_omp(0, n_samples, max_threads, me);
 
@@ -920,7 +931,7 @@ int main(int argc, char *argv[]) {
     }
 
     fprintf(stderr, "%lf\n", exec_time);
-    print_tree(tree, n_dims, points, node_count, me);
+    print_tree_mpi(tree, n_dims, points, node_count, me);
 
     free(ortho_points);
     free_node(tree);
