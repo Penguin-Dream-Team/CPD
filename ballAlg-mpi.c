@@ -573,7 +573,8 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
             printf("Process %d Prep distance for %ld\n", process, ortho_points[i].point_id);
     }
     fprintf(stderr, "PROCESS %d - Calculating furthest distance from start %ld to end %ld and median %f\n", process, start, end, median_point[0]);
-    tree->radius = sqrt(get_furthest_distance_parallel(median_point, start, end, threads));
+    // ISTO CRASHA EM PARALELO
+    tree->radius = sqrt(get_furthest_distance(median_point, start, end));
     fprintf(stderr, "PROCESS %d - Calculated furthest distance\n", process);
 
     int diff = (max_processes - process) / 2;
