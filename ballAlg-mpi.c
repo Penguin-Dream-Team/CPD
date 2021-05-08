@@ -137,12 +137,9 @@ double get_furthest_distance_parallel(double *point, long start, long end, int t
 
     #pragma omp parallel num_threads(threads)
     {
-        //printf("Before fd\n");
         double fd = furthest_distances[omp_get_thread_num()];
-        //printf("After fd\n");
         #pragma omp for schedule(static) 
         for (long i = start; i < end; i++) {
-            //printf("Getting distance for %ld\n", ortho_points[i].point_id);
             double distance = distance_sqrd(points[ortho_points[i].point_id], point);
             if ((fd - distance) < 0) {
                 fd = distance;
@@ -571,11 +568,8 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
             median_point[d] = (point_median_1.center[d] + point_median_2.center[d]) / 2;
         }
     }
-    for (long i = start; i < end; i++) {
-        //printf("Process %d Prep distance for %ld\n", process, ortho_points[i].point_id);
-    }
+
     //fprintf(stderr, "PROCESS %d - Calculating furthest distance from start %ld to end %ld and median %f\n", process, start, end, median_point[0]);
-    
     // ISTO CRASHA EM PARALELO
     //tree->radius = sqrt(get_furthest_distance_parallel(median_point, start, end));
     tree->radius = sqrt(get_furthest_distance(median_point, start, end));
@@ -881,6 +875,25 @@ int main(int argc, char *argv[]) {
     for (long i = 0; i < n_samples; i++) {
         ortho_points[i].center = malloc(sizeof(double) * n_dims);
         ortho_points[i].point_id = i;
+    }
+
+    if (nprocs / 2 * 3 > n_samples){
+        if (me == 0) {
+            printf("NO MPI \n");
+
+            tree = build_tree_parallel_omp(0, n_samples, max_threads, me);
+
+            exec_time += omp_get_wtime();
+            fprintf(stderr, "%lf\n", exec_time);
+            print_tree(tree, n_dims, points, 0);
+
+            free(ortho_points);
+            free_node(tree);
+            free(points[0]);
+            free(points);
+        }
+        MPI_Finalize();
+        exit(0);
     }
 
     if (me != 0)
