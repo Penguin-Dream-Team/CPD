@@ -17,8 +17,9 @@
 #define ARGS_TAG 101
 #define CONFIRMATION_TAG 102
 #define COUNT_TAG 103
-#define PRINT_TAG 104
-#define FOR_TAG 105
+#define NODE_TAG 104
+#define PRINT_TAG 105
+#define FOR_TAG 106
 #define FOR_RESPONSE_TAG 107
 #define EARLY_END_TAG 108
 
@@ -660,16 +661,17 @@ long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points,
         right_id = count + 1;
 
         // Send node id
-        int print_type = 0;
+        long print_type = 0;
         if ((nprocs - me) / 2 == current_print_proc) print_type = 1;
 
-        int print[] = {right_id, print_type};
-        fprintf(stderr, "I am process %d sending print to process %d\n", me, current_print_proc);
-        MPI_Send(print, 1, MPI_INT, current_print_proc, PRINT_TAG, WORLD);
+        long print[] = {right_id, print_type};
+        fprintf(stderr, "I am process %d sending print to process %d with value %ld\n", me, current_print_proc, print_type);
+        MPI_Send(print, 2, MPI_LONG, current_print_proc, NODE_TAG, WORLD);
 
-        int count_received[1];
+        long count_received[1];
         MPI_Status statuses[1];
-        MPI_Recv(count_received, 1, MPI_INT, current_print_proc, PRINT_TAG, WORLD, &statuses[0]);
+        MPI_Recv(count_received, 1, MPI_LONG, current_print_proc, PRINT_TAG, WORLD, &statuses[0]);
+        fprintf(stderr, "I am process %d | received print from process %d\n", me, current_print_proc);
         count = count_received[0];
 
         current_print_proc++;
@@ -829,7 +831,6 @@ void wait_mpi(int me, int begin, int end, int threads) {
     MPI_Send(node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
 
     // Receive node id and print type 
-    int node_id[2];
     int node_sending = 0;
     int proc_number = 0, aux = nprocs / 2;
     while (aux != 0) {
@@ -841,20 +842,25 @@ void wait_mpi(int me, int begin, int end, int threads) {
         aux /= 2;
     }
     fprintf(stderr, "I am process %d waiting for %d to contact me\n", me, node_sending);
-    MPI_Recv(node_id, 2, MPI_INT, node_sending, PRINT_TAG, WORLD, &statuses[2]);
+    long node_id[2];
+    MPI_Recv(node_id, 2, MPI_LONG, node_sending, NODE_TAG, WORLD, &statuses[2]);
+    fprintf(stderr, "I am process %d | received a message from process %d\n", me, node_sending);
 
-    int print_result[1];
-    if (node_id[1])
-        print_result[0] = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
-    else {
+    long print_result[1];
+    if (node_id[1]) {
+        fprintf(stderr, "Process %d starting print as main proc\n", me);
         current_print_proc = me + 1;
         print_result[0] = aux_print_tree_main_proc(tree, n_dims, points, n_count, node_id[0], me);
+    } else {  
+        print_result[0] = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
     }
 
-    MPI_Send(print_result, 1, MPI_INT, node_sending, PRINT_TAG, WORLD);
+    fprintf(stderr, "Process %d return print to proc %d\n", me, node_sending);
+    MPI_Send(print_result, 1, MPI_LONG, node_sending, PRINT_TAG, WORLD);
 
     free(new_ortho_points);
 
+    fprintf(stderr, "Process %d is ENDING\n", me);
     MPI_Finalize();
     exit(0);
 }
@@ -938,5 +944,6 @@ int main(int argc, char *argv[]) {
     free(points[0]);
     free(points);
 
+    fprintf(stderr, "Process %d is ENDING\n", me);
     MPI_Finalize();
 }
