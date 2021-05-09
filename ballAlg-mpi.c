@@ -665,15 +665,20 @@ long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points,
         if ((nprocs - me) / 2 == current_print_proc) print_type = 1;
 
         long print[] = {right_id, print_type};
-        fprintf(stderr, "I am process %d sending print to process %d with value %ld\n", me, current_print_proc, print_type);
+        //fprintf(stderr, "I am process %d sending print to process %d with value %ld\n", me, current_print_proc, print_type);
         MPI_Send(print, 2, MPI_LONG, current_print_proc, NODE_TAG, WORLD);
 
         long count_received[1];
         MPI_Status statuses[1];
         MPI_Recv(count_received, 1, MPI_LONG, current_print_proc, PRINT_TAG, WORLD, &statuses[0]);
-        fprintf(stderr, "I am process %d | received print from process %d\n", me, current_print_proc);
-        count = count_received[0];
+        //fprintf(stderr, "I am process %d | received print from process %d\n", me, current_print_proc);
 
+        /*if (current_print_proc == 2) {
+            MPI_Finalize();
+            exit(0);
+        }*/
+        count = count_received[0];
+        
         current_print_proc++;
     }
 
@@ -841,26 +846,26 @@ void wait_mpi(int me, int begin, int end, int threads) {
         }
         aux /= 2;
     }
-    fprintf(stderr, "I am process %d waiting for %d to contact me\n", me, node_sending);
+    //fprintf(stderr, "I am process %d waiting for %d to contact me\n", me, node_sending);
     long node_id[2];
     MPI_Recv(node_id, 2, MPI_LONG, node_sending, NODE_TAG, WORLD, &statuses[2]);
-    fprintf(stderr, "I am process %d | received a message from process %d\n", me, node_sending);
+    //fprintf(stderr, "I am process %d | received a message from process %d\n", me, node_sending);
 
     long print_result[1];
     if (node_id[1]) {
-        fprintf(stderr, "Process %d starting print as main proc\n", me);
+        //fprintf(stderr, "Process %d starting print as main proc\n", me);
         current_print_proc = me + 1;
         print_result[0] = aux_print_tree_main_proc(tree, n_dims, points, n_count, node_id[0], me);
     } else {  
         print_result[0] = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
     }
 
-    fprintf(stderr, "Process %d return print to proc %d\n", me, node_sending);
+    //fprintf(stderr, "Process %d return print to proc %d\n", me, node_sending);
     MPI_Send(print_result, 1, MPI_LONG, node_sending, PRINT_TAG, WORLD);
 
     free(new_ortho_points);
 
-    fprintf(stderr, "Process %d is ENDING\n", me);
+    //fprintf(stderr, "Process %d is ENDING\n", me);
     MPI_Finalize();
     exit(0);
 }
@@ -941,9 +946,11 @@ int main(int argc, char *argv[]) {
 
     free(ortho_points);
     free_node(tree);
+    
     free(points[0]);
     free(points);
 
-    fprintf(stderr, "Process %d is ENDING\n", me);
+    //fprintf(stderr, "Process %d is ENDING\n", me);
     MPI_Finalize();
+    exit(0);
 }
