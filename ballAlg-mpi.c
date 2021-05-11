@@ -29,6 +29,7 @@ typedef struct {
 } furthest_point;
 
 double **points;
+double *recieved, *response;
 node_t *ortho_points;
 int n_dims, max_threads, sent = 0;
 long max_size;
@@ -473,7 +474,6 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
     int nprocs = max_processes - process;
     long interval = (end - start) / nprocs;
-    MPI_Status status;
 
     /*
      * Get furthest points
@@ -491,9 +491,9 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     int ranks[group_size];
     ranks[0] = process;
 
-    double *recieved = malloc(sizeof(double) * (end - start) );
-    double *response = malloc(sizeof(double) * interval);
-
+    memset(response, 0, sizeof(double) * interval);
+    memset(recieved, 0, sizeof(double) * (end - start));
+    
     // No need to send points on the first round
     if (for_it == 0){
         //printf("++++Processor %ld Starting first for\n", process);
@@ -509,9 +509,9 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         MPI_Gather(response, interval, MPI_DOUBLE, recieved, interval, MPI_DOUBLE, process, WORLD);
 
         //printf("\n Gathered:\n");
-        for (int i = start, d = 0; i < end; i++, d++) {
+        //for (int i = start, d = 0; i < end; i++, d++) {
             //printf("%f\n", recieved[d]);
-        }
+        //}
         //printf("\n");
 
     }
@@ -557,9 +557,9 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         //printf("Processor %d Sent points\n",process);
 
         //printf("\nSCATETING Mastre\n");
-        for(int i = 0; i < interval; i++){
+        //for(int i = 0; i < interval; i++){
             //printf("*** Master process %d Received point %ld and working on %ld\n", process, fakes[i], ortho_points[start+i].point_id);
-        }
+        //}
         //printf("\n");
         
         //printf("*Processor %d CALCULATING PROJECTIONS with start %ld and end %ld\n", process, start, start+interval);
@@ -594,9 +594,6 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         }
     }
     */
-    free(recieved);
-    free(response);
-
 
     //fprintf(stderr, "PROCESS %d - Getting median points\n", process);
     /*
@@ -818,10 +815,10 @@ void finish_early_mpi(){
     exit(0);
 }
 
-void wait_mpi(int me, int begin, int end, int threads) {
+void wait_mpi(int me, int start, int end, int threads) {
     MPI_Status statuses[5];
 
-    int diff = (end - begin) / 2 + begin;
+    int diff = (end - start) / 2 + start;
     
     long for_args[4];
     MPI_Recv(for_args, 4, MPI_LONG, MPI_ANY_SOURCE, MPI_ANY_TAG, WORLD, &statuses[4]);
@@ -886,7 +883,7 @@ void wait_mpi(int me, int begin, int end, int threads) {
     }
     
     if (me < diff){
-        wait_mpi(me, begin, diff, threads);
+        wait_mpi(me, start, diff, threads);
     }
 
     else if (me > diff){
@@ -924,39 +921,41 @@ void wait_mpi(int me, int begin, int end, int threads) {
     MPI_Send(confirmation, 1, MPI_INT, 0, CONFIRMATION_TAG, WORLD);
     //printf("//////////////%d sent confirmation\n", me);
 
-    // Send node count
-    long n_count = 0;
-    count_nodes(tree, &n_count);
-    long node_count[1] = {n_count};
-    MPI_Send(node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
+    if (max_size < 1000) {
+        // Send node count
+        long n_count = 0;
+        count_nodes(tree, &n_count);
+        long node_count[1] = {n_count};
+        MPI_Send(node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
 
-    // Receive node id and print type 
-    int node_sending = 0;
-    int proc_number = 0, aux = nprocs / 2;
-    while (aux != 0) {
-        proc_number += aux;
-        if (proc_number == me) {
-            node_sending = proc_number - aux;
-            aux = 0;
+        // Receive node id and print type 
+        int node_sending = 0;
+        int proc_number = 0, aux = nprocs / 2;
+        while (aux != 0) {
+            proc_number += aux;
+            if (proc_number == me) {
+                node_sending = proc_number - aux;
+                aux = 0;
+            }
+            aux /= 2;
         }
-        aux /= 2;
-    }
-    //fprintf(stderr, "I am process %d waiting for %d to contact me\n", me, node_sending);
-    long node_id[2];
-    MPI_Recv(node_id, 2, MPI_LONG, node_sending, NODE_TAG, WORLD, &statuses[2]);
-    //fprintf(stderr, "I am process %d | received a message from process %d\n", me, node_sending);
+        //fprintf(stderr, "I am process %d waiting for %d to contact me\n", me, node_sending);
+        long node_id[2];
+        MPI_Recv(node_id, 2, MPI_LONG, node_sending, NODE_TAG, WORLD, &statuses[2]);
+        //fprintf(stderr, "I am process %d | received a message from process %d\n", me, node_sending);
 
-    long print_result[1];
-    if (node_id[1]) {
-        //fprintf(stderr, "Process %d starting print as main proc\n", me);
-        current_print_proc = me + 1;
-        print_result[0] = aux_print_tree_main_proc(tree, n_dims, points, n_count, node_id[0], me);
-    } else {  
-        print_result[0] = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
-    }
+        long print_result[1];
+        if (node_id[1]) {
+            //fprintf(stderr, "Process %d starting print as main proc\n", me);
+            current_print_proc = me + 1;
+            print_result[0] = aux_print_tree_main_proc(tree, n_dims, points, n_count, node_id[0], me);
+        } else {  
+            print_result[0] = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
+        }
 
-    //fprintf(stderr, "Process %d return print to proc %d\n", me, node_sending);
-    MPI_Send(print_result, 1, MPI_LONG, node_sending, PRINT_TAG, WORLD);
+        //fprintf(stderr, "Process %d return print to proc %d\n", me, node_sending);
+        MPI_Send(print_result, 1, MPI_LONG, node_sending, PRINT_TAG, WORLD);
+    }
 
     free(new_ortho_points);
 
@@ -993,6 +992,12 @@ int main(int argc, char *argv[]) {
         ortho_points[i].center = malloc(sizeof(double) * n_dims);
         ortho_points[i].point_id = i;
     }
+    /*
+     * Init some variables for MPI
+     */
+
+    recieved = malloc(sizeof(double) * n_samples );
+    response = malloc(sizeof(double) * n_samples / nprocs);
 
     if (nprocs / 2 * 3 > n_samples){
         if (me == 0) {
@@ -1026,22 +1031,27 @@ int main(int argc, char *argv[]) {
     }
 
     exec_time += omp_get_wtime();
-
-    // Receive node count
-    int node_count = 0;
-    int count[1];
-    for (int i = 1; i < nprocs; i++){
-        count[0] = 0;
-        MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, &statuses[i]);
-        node_count += count[0];
-    }
-
     fprintf(stderr, "%lf\n", exec_time);
-    print_tree_mpi(tree, n_dims, points, node_count, me);
+
+    if (n_samples < 1000) {
+        // Receive node count
+        int node_count = 0;
+        int count[1];
+        for (int i = 1; i < nprocs; i++){
+            count[0] = 0;
+            MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, &statuses[i]);
+            node_count += count[0];
+        }
+
+        print_tree_mpi(tree, n_dims, points, node_count, me);
+    }
 
     free(ortho_points);
     free_node(tree);
     
+    free(recieved);
+    free(response);
+
     free(points[0]);
     free(points);
 
