@@ -1,4 +1,4 @@
-// MPI version
+// Large MPI version
 
 #include <math.h>
 #include <stdio.h>
@@ -8,9 +8,9 @@
 #include <omp.h>
 #include <mpi.h>
 
-#include "ballAlg-large-mpi.h"
 #include "gen_points.h"
 #include "quickSelect.h"
+#include "ballAlg-large-mpi.h"
 
 #define ELEM_SWAP(a,b) { register node_t t = (a); (a) = (b); (b) = t; }
 #define WORLD MPI_COMM_WORLD
@@ -29,15 +29,15 @@ typedef struct {
     long max;
 } furthest_point;
 
-double **points;
-node_t *ortho_points;
-int n_dims, max_threads, sent = 0;
-long max_size;
-int first = 0;
-int current_print_proc = 0;
-int nprocs = 0;
+static double **points;
+static node_t *ortho_points;
+static int n_dims, max_threads, sent = 0;
+static long max_size;
+static int first = 0;
+static int current_print_proc = 0;
+static int nprocs = 0;
 
-node_t *create_node(double *point, long id, double radius) {
+static node_t *create_node(double *point, long id, double radius) {
     node_t *node = malloc(sizeof(node_t));
 
     node->point_id = id;
@@ -49,7 +49,7 @@ node_t *create_node(double *point, long id, double radius) {
     return node;
 }
 
-void free_node(node_t *node) {
+static void free_node(node_t *node) {
     if (node->radius != 0) {
         free(node->center);
     }
@@ -62,7 +62,7 @@ void free_node(node_t *node) {
     free(node);
 }
 
-double distance_sqrd(double *pt1, double *pt2) {
+static double distance_sqrd(double *pt1, double *pt2) {
     double dist = 0.0;
 
     for (int d = 0; d < n_dims; d++) {
@@ -73,11 +73,11 @@ double distance_sqrd(double *pt1, double *pt2) {
     return dist;
 }
 
-double distance(double *pt1, double *median) {
+static double distance(double *pt1, double *median) {
     return sqrt(distance_sqrd(pt1, median));
 }
 
-int get_furthest_point(long point, long start, long end) {
+static int get_furthest_point(long point, long start, long end) {
     long max = point;
     double *point_point = points[ortho_points[point].point_id];
     double distance, max_distance = 0.0;
@@ -92,7 +92,7 @@ int get_furthest_point(long point, long start, long end) {
     return max;
 }
 
-double get_furthest_distance(double *point, long start, long end) {
+static double get_furthest_distance(double *point, long start, long end) {
     double distance, max_distance = 0.0;
 
     for (long i = start; i < end; i++) {
@@ -104,7 +104,7 @@ double get_furthest_distance(double *point, long start, long end) {
     return max_distance;
 }
 
-int get_furthest_point_parallel(long point, long start, long end, int threads) {
+static int get_furthest_point_parallel(long point, long start, long end, int threads) {
     double *point_point = points[ortho_points[point].point_id];
     furthest_point *furthest_points = malloc((sizeof(furthest_point) + 2048) * threads);
 
@@ -134,7 +134,7 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
     return max;
 }
 
-double get_furthest_distance_parallel(double *point, long start, long end, int threads) {
+static double get_furthest_distance_parallel(double *point, long start, long end, int threads) {
     double *furthest_distances = malloc((sizeof(double) + 2048) * threads);
 
     #pragma omp parallel num_threads(threads)
@@ -159,7 +159,7 @@ double get_furthest_distance_parallel(double *point, long start, long end, int t
     return max_distance;
 }
 
-void calc_ortho_projection(double *point_a, double *point_b, double *p1, double *p2, node_t *ortho_points, int p1_index, int p2_index) {
+static void calc_ortho_projection(double *point_a, double *point_b, double *p1, double *p2, node_t *ortho_points, int p1_index, int p2_index) {
     double top_inner_product1 = 0;
     double top_inner_product2 = 0;
     double bot_inner_product = 0;
@@ -181,7 +181,7 @@ void calc_ortho_projection(double *point_a, double *point_b, double *p1, double 
 }
 
 // not inclusive
-node_t *build_tree(long start, long end) {  
+static node_t *build_tree(long start, long end) {  
     if (start == end - 1) {  // 1 point
         return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
 
@@ -270,7 +270,7 @@ node_t *build_tree(long start, long end) {
 }
 
 // not inclusive
-void calc_projections(long start, long end, int threads, double *point_a, double *point_b){
+static void calc_projections(long start, long end, int threads, double *point_a, double *point_b){
 
     /*
      * Get projections to allow median calc
@@ -287,7 +287,7 @@ void calc_projections(long start, long end, int threads, double *point_a, double
 }
 
 // not inclusive
-void calc_projections_mpi(long start, long end, int threads, long interval, long processor, long a, long b){
+static void calc_projections_mpi(long start, long end, int threads, long interval, long processor, long a, long b){
     //printf("calc projections mpi start %ld, end %ld, interval %ld\n", start, end, interval);
     
     /*
@@ -319,7 +319,7 @@ void calc_projections_mpi(long start, long end, int threads, long interval, long
 
 
 // not inclusive
-node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {  
+static node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {  
     //fprintf(stderr, "FUNCTION OMP on Processor: %d, Threads: %d, Start: %ld, End: %ld\n", me, threads, start, end);
 
     if (start == end - 1) {  // 1 point
@@ -437,7 +437,7 @@ node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {
 }
 
 // not inclusive
-node_t *build_tree_parallel_mpi(long start, long end, int process, int max_processes, int threads) {  
+static node_t *build_tree_parallel_mpi(long start, long end, int process, int max_processes, int threads) {  
     //fprintf(stderr, "FUNCTION MPI Process: %d, Max_Process: %d, Threads: %d, Start: %ld, End: %ld\n", process, max_processes, threads, start, end);
 
     if (start == end - 1) {  // 1 point
@@ -632,7 +632,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 }
 
 
-void count_nodes(node_t *tree, long *n_count) {
+static void count_nodes(node_t *tree, long *n_count) {
     n_count[0]++;
 
     if (tree->L) {
@@ -643,7 +643,7 @@ void count_nodes(node_t *tree, long *n_count) {
     }
 }
 
-long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points,
+static long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points,
         long n_count, long count, int me) {
     long my_id, left_id = -1, right_id = -1;
     bool left = false;
@@ -692,7 +692,7 @@ long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points,
     return count;       
 }
 
-long aux_print_tree(node_t *tree, int n_dims, double **points,
+static long aux_print_tree(node_t *tree, int n_dims, double **points,
         long n_count, long count) {
     long my_id, left_id = -1, right_id = -1;
 
@@ -715,7 +715,7 @@ long aux_print_tree(node_t *tree, int n_dims, double **points,
     return count;
 }
 
-void print_tree_mpi(node_t *tree, int n_dims, double **points, int prev_count, int me) {
+static void print_tree_mpi(node_t *tree, int n_dims, double **points, int prev_count, int me) {
     long n_count = 0;
 
     count_nodes(tree, &n_count);
@@ -726,7 +726,7 @@ void print_tree_mpi(node_t *tree, int n_dims, double **points, int prev_count, i
     aux_print_tree_main_proc(tree, n_dims, points, n_count, 0, me);
 }
 
-void print_tree(node_t *tree, int n_dims, double **points, int prev_count) {
+static void print_tree(node_t *tree, int n_dims, double **points, int prev_count) {
     long n_count = 0;
 
     count_nodes(tree, &n_count);
@@ -737,7 +737,7 @@ void print_tree(node_t *tree, int n_dims, double **points, int prev_count) {
     aux_print_tree(tree, n_dims, points, n_count, 0);
 }
 
-void finish_early_mpi(){
+static void finish_early_mpi(){
     // Send end confirmation
     int confirmation[1] = {1};
     MPI_Send(confirmation, 1, MPI_INT, 0, CONFIRMATION_TAG, WORLD);
@@ -752,7 +752,7 @@ void finish_early_mpi(){
     exit(0);
 }
 
-void wait_mpi(int me, int begin, int end, int threads) {
+static void wait_mpi(int me, int begin, int end, int threads) {
     MPI_Status statuses[5];
 
     int diff = (end - begin) / 2 + begin;
@@ -871,8 +871,9 @@ void wait_mpi(int me, int begin, int end, int threads) {
     exit(0);
 }
 
-int ballAlg_mpi(int argc, char *argv[], long n_samples) {
+int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
     double exec_time;
+    long start, end;
 
     omp_set_nested(1);
     omp_set_dynamic(1);
@@ -883,8 +884,11 @@ int ballAlg_mpi(int argc, char *argv[], long n_samples) {
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &me);
 
+    start = (n_samples / nprocs) * me;
+    end = start + (n_samples / nprocs);
+
     exec_time = -omp_get_wtime();
-    points = get_points(argc, argv, n_dims, n_samples);
+    points = get_points_large(argc, argv, n_dims, n_samples, start, end);
     max_size = n_samples / 2;
 
     /*
@@ -897,25 +901,6 @@ int ballAlg_mpi(int argc, char *argv[], long n_samples) {
     for (long i = 0; i < n_samples; i++) {
         ortho_points[i].center = malloc(sizeof(double) * n_dims);
         ortho_points[i].point_id = i;
-    }
-
-    if (nprocs / 2 * 3 > n_samples){
-        if (me == 0) {
-            //printf("NO MPI \n");
-
-            tree = build_tree_parallel_omp(0, n_samples, max_threads, me);
-
-            exec_time += omp_get_wtime();
-            fprintf(stderr, "%lf\n", exec_time);
-            print_tree(tree, n_dims, points, 0);
-
-            free(ortho_points);
-            free_node(tree);
-            free(points[0]);
-            free(points);
-        }
-        MPI_Finalize();
-        exit(0);
     }
 
     if (me != 0)
@@ -953,32 +938,4 @@ int ballAlg_mpi(int argc, char *argv[], long n_samples) {
     //fprintf(stderr, "Process %d is ENDING\n", me);
     MPI_Finalize();
     exit(0);
-}
-
-int main(int argc, char *argv[]) {
-    int n_dims;
-    long np;
-
-    if(argc != 4){
-        printf("Usage: %s <n_dims> <n_points> <seed>\n", argv[0]);
-        exit(1);
-    }
-
-    n_dims = atoi(argv[1]);
-    if (n_dims < 2){
-        printf("Illegal number of dimensions (%d), must be above 1.\n", n_dims);
-        exit(2);
-    }
-
-    np = atol(argv[2]);
-    if (np < 1){
-        printf("Illegal number of points (%ld), must be above 0.\n", np);
-        exit(3);
-    }
-
-    if (np > 1000) {
-        ballAlg_mpi(argc, argv, np);
-    } else {
-        ballAlg_large_mpi(argc, argv, np);
-    }
 }
