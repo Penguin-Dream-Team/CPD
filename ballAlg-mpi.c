@@ -737,21 +737,6 @@ void print_tree(node_t *tree, int n_dims, double **points, int prev_count) {
     aux_print_tree(tree, n_dims, points, n_count, 0);
 }
 
-void finish_early_mpi(){
-    // Send end confirmation
-    int confirmation[1] = {1};
-    MPI_Send(confirmation, 1, MPI_INT, 0, CONFIRMATION_TAG, WORLD);
-
-
-    // Send node count
-    long node_count[1] = {0};
-    MPI_Send(node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
-
-
-    MPI_Finalize();
-    exit(0);
-}
-
 void wait_mpi(int me, int begin, int end, int threads) {
     MPI_Status statuses[5];
 
