@@ -29,7 +29,6 @@ typedef struct {
 } furthest_point;
 
 double **points;
-double *recieved, *response;
 node_t *ortho_points;
 int n_dims, max_threads, sent = 0;
 long max_size;
@@ -491,8 +490,8 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     int ranks[group_size];
     ranks[0] = process;
 
-    memset(response, 0, sizeof(double) * interval);
-    memset(recieved, 0, sizeof(double) * (end - start));
+    double *recieved = malloc(sizeof(double) * (end - start));
+    double *response = malloc(sizeof(double) * interval);
     
     // No need to send points on the first round
     if (for_it == 0){
@@ -580,7 +579,9 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         ortho_points[i].center[0] = recieved[d];
     }
     
-
+    free(recieved);
+    free(response);
+    
     /*
     double *projections_mpi = malloc(sizeof(double) * interval);
     for (int i = process + 1, d = 1; i < max_processes; i++, d++) {
@@ -975,12 +976,13 @@ int main(int argc, char *argv[]) {
     omp_set_dynamic(1);
     max_threads = omp_get_max_threads();
 
+    exec_time = -omp_get_wtime();
+
     int me;
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &me);
-
-    exec_time = -omp_get_wtime();
+    
     points = get_points(argc, argv, &n_dims, &n_samples);
     max_size = n_samples / 2;
 
@@ -995,12 +997,6 @@ int main(int argc, char *argv[]) {
         ortho_points[i].center = malloc(sizeof(double) * n_dims);
         ortho_points[i].point_id = i;
     }
-    /*
-     * Init some variables for MPI
-     */
-
-    recieved = malloc(sizeof(double) * n_samples );
-    response = malloc(sizeof(double) * n_samples / nprocs);
 
     if (nprocs / 2 * 3 > n_samples){
         if (me == 0) {
@@ -1050,14 +1046,10 @@ int main(int argc, char *argv[]) {
 
     free(ortho_points);
     free_node(tree);
-    
-    free(recieved);
-    free(response);
 
     free(points[0]);
     free(points);
 
-    //fprintf(stderr, "Process %d is ENDING\n", me);
     MPI_Finalize();
     exit(0);
 }
