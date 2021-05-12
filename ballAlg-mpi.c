@@ -856,7 +856,7 @@ void wait_mpi(int me, int start, int end, int threads) {
         MPI_Comm_create_group(MPI_COMM_WORLD, prime_group, 0, &prime_comm);
 
         //Receiving points
-        node_t *for_ortho_points = malloc(sizeof(node_t) * interval);
+        //node_t *for_ortho_points = malloc(sizeof(node_t) * interval);
         long *for_indexes = malloc(sizeof(long) * interval);
         //MPI_Recv(for_indexes, interval, MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, MPI_STATUS_IGNORE);
 
@@ -866,13 +866,16 @@ void wait_mpi(int me, int start, int end, int threads) {
 
         //printf("\nSCATETING SLAVE\n");
         for(int i = 0; i < interval; i++){
-            for_ortho_points[i].center = malloc(sizeof(double) * n_dims);
-            for_ortho_points[i].point_id = for_indexes[i];
+            //for_ortho_points[i].center = malloc(sizeof(double) * n_dims);
+            //for_ortho_points[i].point_id = for_indexes[i];
+            //ortho_points[i].center = malloc(sizeof(double) * n_dims);
+            memset(ortho_points[i].center, 0, n_dims);
+            ortho_points[i].point_id = for_indexes[i];
             //printf("*** Slave process %d Received point %ld\n", me, for_indexes[i]);
         }
         //printf("\n");
         
-        ortho_points = for_ortho_points;
+        //ortho_points = for_ortho_points;
 
         //printf("Process: %d, starting calculations\n", me);
         calc_projections_mpi(0, interval, threads, interval, 0, a, b, prime_comm);
