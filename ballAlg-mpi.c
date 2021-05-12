@@ -733,8 +733,7 @@ long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points,
         MPI_Send(print, 2, MPI_LONG, current_print_proc, NODE_TAG, WORLD);
 
         long count_received[1];
-        MPI_Status statuses[1];
-        MPI_Recv(count_received, 1, MPI_LONG, current_print_proc, PRINT_TAG, WORLD, &statuses[0]);
+        MPI_Recv(count_received, 1, MPI_LONG, current_print_proc, PRINT_TAG, WORLD, MPI_STATUS_IGNORE);
         //fprintf(stderr, "I am process %d | received print from process %d\n", me, current_print_proc);
 
         /*if (current_print_proc == 2) {
@@ -816,12 +815,11 @@ void finish_early_mpi(){
 }
 
 void wait_mpi(int me, int start, int end, int threads) {
-    MPI_Status statuses[5];
 
     int diff = (end - start) / 2 + start;
     
     long for_args[4];
-    MPI_Recv(for_args, 4, MPI_LONG, MPI_ANY_SOURCE, MPI_ANY_TAG, WORLD, &statuses[4]);
+    MPI_Recv(for_args, 4, MPI_LONG, MPI_ANY_SOURCE, MPI_ANY_TAG, WORLD, MPI_STATUS_IGNORE);
 
     long interval = for_args[0];
     int res_process = for_args[1];
@@ -860,7 +858,7 @@ void wait_mpi(int me, int start, int end, int threads) {
         //Receiving points
         node_t *for_ortho_points = malloc(sizeof(node_t) * interval);
         long *for_indexes = malloc(sizeof(long) * interval);
-        //MPI_Recv(for_indexes, interval, MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
+        //MPI_Recv(for_indexes, interval, MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, MPI_STATUS_IGNORE);
 
         //printf("------------------Process: %d, receiving points\n", me);
         MPI_Scatter(for_indexes, interval, MPI_LONG, for_indexes, interval, MPI_LONG, 0, prime_comm);
@@ -896,7 +894,7 @@ void wait_mpi(int me, int start, int end, int threads) {
     // Receive Args
     long args[2];
     //fprintf(stderr, "Node %d, is waiting for args\n", me);
-    MPI_Recv(args, 2, MPI_LONG, MPI_ANY_SOURCE, ARGS_TAG, WORLD, &statuses[0]);
+    MPI_Recv(args, 2, MPI_LONG, MPI_ANY_SOURCE, ARGS_TAG, WORLD, MPI_STATUS_IGNORE);
 
     node_t *new_ortho_points = malloc(sizeof(node_t) * args[0]);
     //fprintf(stderr, "Node %d, after malloc\n", me);
@@ -904,7 +902,7 @@ void wait_mpi(int me, int start, int end, int threads) {
     // Receive point indexes
     long *rec_index = malloc(sizeof(long) * args[0]);
     //fprintf(stderr, "Node %d, is waiting for points\n", me);
-    MPI_Recv(rec_index, args[0], MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, &statuses[1]);
+    MPI_Recv(rec_index, args[0], MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, MPI_STATUS_IGNORE);
 
     for(int i = 0; i < args[0]; i++){
         new_ortho_points[i].center = malloc(sizeof(double) * n_dims);
@@ -941,7 +939,7 @@ void wait_mpi(int me, int start, int end, int threads) {
         }
         //fprintf(stderr, "I am process %d waiting for %d to contact me\n", me, node_sending);
         long node_id[2];
-        MPI_Recv(node_id, 2, MPI_LONG, node_sending, NODE_TAG, WORLD, &statuses[2]);
+        MPI_Recv(node_id, 2, MPI_LONG, node_sending, NODE_TAG, WORLD, MPI_STATUS_IGNORE);
         //fprintf(stderr, "I am process %d | received a message from process %d\n", me, node_sending);
 
         long print_result[1];
@@ -1025,9 +1023,8 @@ int main(int argc, char *argv[]) {
     
     // Receive confirmation
     int confirmation[1];
-    MPI_Status statuses[nprocs];
     for (int i = 1; i < nprocs; i++){
-        MPI_Recv(confirmation, 1, MPI_LONG, MPI_ANY_SOURCE, CONFIRMATION_TAG, WORLD, &statuses[i]);
+        MPI_Recv(confirmation, 1, MPI_LONG, MPI_ANY_SOURCE, CONFIRMATION_TAG, WORLD, MPI_STATUS_IGNORE);
     }
 
     exec_time += omp_get_wtime();
@@ -1039,7 +1036,7 @@ int main(int argc, char *argv[]) {
         int count[1];
         for (int i = 1; i < nprocs; i++){
             count[0] = 0;
-            MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, &statuses[i]);
+            MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, MPI_STATUS_IGNORE);
             node_count += count[0];
         }
 
