@@ -899,7 +899,7 @@ void wait_mpi(int me, int start, int end, int threads) {
     //fprintf(stderr, "Node %d, is waiting for args\n", me);
     MPI_Recv(args, 2, MPI_LONG, MPI_ANY_SOURCE, ARGS_TAG, WORLD, MPI_STATUS_IGNORE);
 
-    node_t *new_ortho_points = malloc(sizeof(node_t) * args[0]);
+    //node_t *new_ortho_points = malloc(sizeof(node_t) * args[0]);
     //fprintf(stderr, "Node %d, after malloc\n", me);
 
     // Receive point indexes
@@ -908,13 +908,15 @@ void wait_mpi(int me, int start, int end, int threads) {
     MPI_Recv(rec_index, args[0], MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, MPI_STATUS_IGNORE);
 
     for(int i = 0; i < args[0]; i++){
-        new_ortho_points[i].center = malloc(sizeof(double) * n_dims);
-        new_ortho_points[i].point_id = rec_index[i];
+        //new_ortho_points[i].center = malloc(sizeof(double) * n_dims);
+        //new_ortho_points[i].point_id = rec_index[i];
+        memset(ortho_points[i].center, 0, n_dims);
+        ortho_points[i].point_id = rec_index[i];
         //printf("------/-/-/-/-/-/-Process: %d, received pomt %ld\n", me, rec_index[i]);
     }
     
     //fprintf(stderr, "Node %d received points\n", me);
-    ortho_points = new_ortho_points;
+    //ortho_points = new_ortho_points;
     node_t * tree = build_tree_parallel_mpi(0, args[0], me, args[1], max_threads);
 
     // Send end confirmation
@@ -958,7 +960,7 @@ void wait_mpi(int me, int start, int end, int threads) {
         MPI_Send(print_result, 1, MPI_LONG, node_sending, PRINT_TAG, WORLD);
     }
 
-    free(new_ortho_points);
+    //free(new_ortho_points);
 
     //fprintf(stderr, "Process %d is ENDING\n", me);
     MPI_Finalize();
