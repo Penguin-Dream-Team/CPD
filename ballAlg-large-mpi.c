@@ -14,19 +14,23 @@
 
 #define ELEM_SWAP(a,b) { register node_t t = (a); (a) = (b); (b) = t; }
 #define WORLD MPI_COMM_WORLD
-#define POINT_TAG 100
-#define ARGS_TAG 101
-#define CONFIRMATION_TAG 102
-#define COUNT_TAG 103
-#define NODE_TAG 104
-#define PRINT_TAG 105
-#define FOR_TAG 106
-#define FOR_RESPONSE_TAG 107
-#define EARLY_END_TAG 108
+#define A_TAG 100
+#define B_TAG 101
+#define PROCESS_TAG 102
+#define POINT_A_TAG 103
+#define POINT_B_TAG 104
+#define PROCESS_TYPE_TAG 105
+#define CONFIRMATION_TAG 106
+#define COUNT_TAG 107
+#define NODE_TAG 108
+#define PRINT_TAG 109
+#define FOR_TAG 110
+#define FOR_RESPONSE_TAG 111
 
 typedef struct {
-    double max_distance;
+    int process;
     long max;
+    double max_distance;
 } furthest_point;
 
 static double **points;
@@ -36,6 +40,7 @@ static long max_size;
 static int first = 0;
 static int current_print_proc = 0;
 static int nprocs = 0;
+MPI_Datatype furthest_point_mpi;
 
 static node_t *create_node(double *point, long id, double radius) {
     node_t *node = malloc(sizeof(node_t));
@@ -47,6 +52,20 @@ static node_t *create_node(double *point, long id, double radius) {
     node->R = NULL;
 
     return node;
+}
+
+static void create_mpi_struct(MPI_Datatype *data_type) {
+    const int nitems = 1; 
+    int blocklengths = 1;
+    MPI_Datatype types[3] = { MPI_INT, MPI_LONG, MPI_DOUBLE }; 
+    MPI_Aint offsets[3]; 
+
+    offsets[0] = offsetof(furthest_point, process);
+    offsets[1] = offsetof(furthest_point, max);
+    offsets[2] = offsetof(furthest_point, max_distance);
+
+    MPI_Type_create_struct(nitems, &blocklengths, offsets, types, data_type);
+    MPI_Type_commit(data_type);
 }
 
 static void free_node(node_t *node) {
@@ -104,8 +123,7 @@ static double get_furthest_distance(double *point, long start, long end) {
     return max_distance;
 }
 
-static furthest_point get_furthest_point_parallel(long point, long start, long end, int threads) {
-    double *point_point = points[ortho_points[point].point_id];
+static furthest_point get_furthest_point_parallel(double *point_point, long start, long end, int threads) {
     furthest_point *furthest_points = malloc((sizeof(furthest_point) + 2048) * threads);
 
     #pragma omp parallel num_threads(threads)
@@ -126,7 +144,7 @@ static furthest_point get_furthest_point_parallel(long point, long start, long e
     furthest_point max;
     double max_distance = 0.0;
     for (int i = 0; i < threads; i++) {
-        if (max_distance < furthest_points[i].max_distance) {
+        if ((max_distance - furthest_points[i].max_distance) < 0) {
             max = furthest_points[i];
             max_distance = furthest_points[i].max_distance;
         }
@@ -350,8 +368,8 @@ static node_t *build_tree_parallel_omp(long start, long end, int threads, int me
     /*
      * Get furthest points
      */
-    long a = get_furthest_point_parallel(start, start, end, threads).max;
-    long b = get_furthest_point_parallel(a, start, end, threads).max;
+    long a = get_furthest_point_parallel(ortho_points[start].center, start, end, threads).max;
+    long b = get_furthest_point_parallel(ortho_points[a].center, start, end, threads).max;
 
     double *point_a = points[ortho_points[a].point_id];
     double *point_b = points[ortho_points[b].point_id];
@@ -436,57 +454,115 @@ static node_t *build_tree_parallel_omp(long start, long end, int threads, int me
 }
 
 // not inclusive
-static node_t *build_tree_parallel_mpi(long start, long end, int process, int max_processes, int threads) {  
+static node_t *build_tree_parallel_mpi(double *first_point, long start, long end, int me, int max_processes, int threads) {  
     //fprintf(stderr, "FUNCTION MPI Process: %d, Max_Process: %d, Threads: %d, Start: %ld, End: %ld\n", process, max_processes, threads, start, end);    
-
-    int nprocs = max_processes - process;
-    long interval = (end - start) / nprocs;
-    MPI_Status status;
+    double *point_a, *point_b;
+    int process, sender;
 
     /*
      * Get furthest point a
      */
-    furthest_point a = get_furthest_point_parallel(start, start, end, threads);
-    
+    furthest_point a = get_furthest_point_parallel(first_point, start, end, threads);
+
     // Receive value a
-    int value_a[nprocs - 1];
-    for (int i = 1; i < nprocs; i++){
-        MPI_Recv(&value_a[i], 1, MPI_FURTHEST_POINTS, MPI_ANY_SOURCE, CONFIRMATION_TAG, WORLD, MPI_STATUS_IGNORE);
+    furthest_point value_a[max_processes - 1];
+    for (int i = 1; i < max_processes; i++) {
+        MPI_Recv(&value_a[i - 1], sizeof(furthest_point_mpi), furthest_point_mpi, MPI_ANY_SOURCE, A_TAG, WORLD, MPI_STATUS_IGNORE);
     }
 
-    furthest_point max = a;
-    for (int i = 0; i < threads; i++) 
-        if (max.max_distance < value_a[i].max_distance) 
-            max = value_a[i];
+    furthest_point max_furthest = a;
+    for (int i = 0; i < max_processes - 1; i++) {
+        if ((max_furthest.max_distance - value_a[i].max_distance) < 0) {
+            max_furthest = value_a[i];
+        }
+    }
 
-    // Send a to everyone
-    
+    for (int i = 1; i < max_processes; i++) {
+        if (max_furthest.process == 0) sender = 0;
+        else if (max_furthest.process == i) sender = 1;
+        else sender = 0;
+
+        MPI_Send(&sender, 1, MPI_INT, i, PROCESS_TYPE_TAG, WORLD);
+    }
+
+    if (max_furthest.process != 0) {
+        // Receive a from other process
+        point_a = malloc(sizeof(double) * n_dims);
+        MPI_Recv(point_a, n_dims, MPI_DOUBLE, MPI_ANY_SOURCE, POINT_A_TAG, WORLD, MPI_STATUS_IGNORE); 
+   
+    } else {
+        // Send a to everyone
+        point_a = points[ortho_points[a.max].point_id];
+        for (int i = 1; i < max_processes; i++) {
+            MPI_Send(point_a, n_dims, MPI_DOUBLE, i, POINT_A_TAG, WORLD);
+        }
+    }
+
+
     /*
-     * Get furthest point a
+     * Get furthest point b
      */
-    furthest_point b = get_furthest_point_parallel(a, start, end, threads);
+    furthest_point b = get_furthest_point_parallel(point_a, start, end, threads);
 
     // Receive value b
-    int value_b[nprocs - 1];
-    for (int i = 1; i < nprocs; i++){
-        MPI_Recv(&value_b[i], 1, MPI_DOUBLE, MPI_ANY_SOURCE, CONFIRMATION_TAG, WORLD, MPI_STATUS_IGNORE);
+    furthest_point value_b[max_processes - 1];
+    for (int i = 1; i < max_processes; i++) {
+        MPI_Recv(&value_b[i - 1], sizeof(furthest_point_mpi), furthest_point_mpi, MPI_ANY_SOURCE, B_TAG, WORLD, MPI_STATUS_IGNORE);
     }
 
-    furthest_point max = b;
-    for (int i = 0; i < threads; i++) 
-        if (max.max_distance < value_b[i].max_distance) 
-            max = value_b[i];
+    max_furthest = b;
+    for (int i = 0; i < max_processes - 1; i++) {
+        if ((max_furthest.max_distance - value_b[i].max_distance) < 0) {
+            max_furthest = value_b[i];
+        }
+    }
 
-    // Send a to everyone
+    for (int i = 1; i < max_processes; i++) {
+        if (max_furthest.process == 0) sender = 0;
+        else if (max_furthest.process == i) sender = 1;
+        else sender = 0;
 
-    double *point_a = points[ortho_points[a].point_id];
-    double *point_b = points[ortho_points[b].point_id];
-
-    long a1 = ortho_points[a].point_id;
-    long b1 = ortho_points[b].point_id;
+        MPI_Send(&sender, 1, MPI_INT, i, PROCESS_TYPE_TAG, WORLD);
+    }
     
+    if (max_furthest.process != 0) {
+        // Receive b from other process
+        point_b = malloc(sizeof(double) * n_dims);
+        MPI_Recv(point_b, n_dims, MPI_DOUBLE, MPI_ANY_SOURCE, POINT_B_TAG, WORLD, MPI_STATUS_IGNORE); 
+
+    } else {
+        // Send b to everyone
+        point_b = points[ortho_points[b.max].point_id];
+        for (int i = 1; i < max_processes; i++) {
+            MPI_Send(point_b, n_dims, MPI_DOUBLE, i, POINT_B_TAG, WORLD);
+        }
+    }
+    
+    fprintf(stderr, "[PROCESS %d]: point a is", 0);
+    for (int j = 0; j < n_dims; j++) {
+        fprintf(stderr, " %f", point_a[j]);
+    }
+    fprintf(stderr, "\n");
+
+    fprintf(stderr, "[PROCESS %d]: point b is", 0);
+    for (int j = 0; j < n_dims; j++) {
+        fprintf(stderr, " %f", point_b[j]);
+    }
+    fprintf(stderr, "\n");
+
     calc_projections(start, end, threads, point_a, point_b);
 
+    for (int i = start; i < end; i++) {
+        fprintf(stderr, "[PROCESS %d]: projection at ortho_points %d is", 0, i);
+        for (int j = 0; j < n_dims; j++) {
+            fprintf(stderr, " %f", ortho_points[i].center[j]);
+        }
+        fprintf(stderr, "\n");
+    }
+
+    MPI_Finalize();
+    exit(0);
+    
     /*
      * Get median point which will be the center of the ball
      */
@@ -536,9 +612,9 @@ static node_t *build_tree_parallel_mpi(long start, long end, int process, int ma
 
     long size = end - median_ids.second;
     if ((size > 1000)) {
-        tree->L = build_tree_parallel_mpi(start, median_ids.second, process, new_max_processes, threads);
+        tree->L = build_tree_parallel_mpi(first_point, start, median_ids.second, process, max_processes, threads);
         
-        tree->L = build_tree_parallel_mpi(median_ids.second, end, process, new_max_processes, threads);
+        tree->L = build_tree_parallel_mpi(first_point, median_ids.second, end, process, max_processes, threads);
 
     } else {
         #pragma omp parallel
@@ -612,8 +688,7 @@ static long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points,
         MPI_Send(print, 2, MPI_LONG, current_print_proc, NODE_TAG, WORLD);
 
         long count_received[1];
-        MPI_Status statuses[1];
-        MPI_Recv(count_received, 1, MPI_LONG, current_print_proc, PRINT_TAG, WORLD, &statuses[0]);
+        MPI_Recv(count_received, 1, MPI_LONG, current_print_proc, PRINT_TAG, WORLD, MPI_STATUS_IGNORE);
         //fprintf(stderr, "I am process %d | received print from process %d\n", me, current_print_proc);
 
         /*if (current_print_proc == 2) {
@@ -679,55 +754,83 @@ static void print_tree(node_t *tree, int n_dims, double **points, int prev_count
     aux_print_tree(tree, n_dims, points, n_count, 0);
 }
 
-static void wait_mpi(int me, int begin, int end, int threads) {
+static void wait_mpi(double *first_point, long start, long end, int me, int max_processes, int threads) {
     //fprintf(stderr, "FUNCTION MPI Process: %d, Max_Process: %d, Threads: %d, Start: %ld, End: %ld\n", process, max_processes, threads, start, end);    
-
-    int nprocs = max_processes - process;
-    long interval = (end - start) / nprocs;
-    MPI_Status status;
+    double *point_a, *point_b;
+    int sender;
 
     /*
      * Get furthest point a
      */
-    furthest_point a = get_furthest_point_parallel(start, start, end, threads);
-    
+    furthest_point a = get_furthest_point_parallel(first_point, start, end, threads);
+    a.process = me;
+
     // Send value a
-    MPI_Send(a.max_distance, 1, MPI_LONG, 0, CONFIRMATION_TAG, WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(&value_b[i], 1, MPI_LONG, MPI_ANY_SOURCE, CONFIRMATION_TAG, WORLD, MPI_STATUS_IGNORE);
+    MPI_Send(&a, sizeof(furthest_point_mpi), furthest_point_mpi, 0, A_TAG, WORLD);
+    MPI_Recv(&sender, 1, MPI_INT, 0, PROCESS_TYPE_TAG, WORLD, MPI_STATUS_IGNORE);
 
-    furthest_point max = a;
-    for (int i = 0; i < threads; i++) 
-        if (max.max_distance < value_a[i].max_distance) 
-            max = value_a[i];
-
-    // Send a to everyone
-    
-    /*
-     * Get furthest point a
-     */
-    furthest_point b = get_furthest_point_parallel(a, start, end, threads);
-
-    // Receive value b
-    int value_b[nprocs - 1];
-    for (int i = 1; i < nprocs; i++){
-        MPI_Recv(&value_b[i], 1, MPI_LONG, MPI_ANY_SOURCE, CONFIRMATION_TAG, WORLD, MPI_STATUS_IGNORE);
+    if (sender) {
+        point_a = points[ortho_points[a.max].point_id];
+        for (int i = 0; i < max_processes; i++) {
+            if (i == me) continue;
+            MPI_Send(point_a, n_dims, MPI_DOUBLE, i, POINT_A_TAG, WORLD);
+        }
+    } else {
+        // Receive final a
+        point_a = malloc(sizeof(double) * n_dims);
+        MPI_Recv(point_a, n_dims, MPI_DOUBLE, MPI_ANY_SOURCE, POINT_A_TAG, WORLD, MPI_STATUS_IGNORE);
     }
 
-    furthest_point max = b;
-    for (int i = 0; i < threads; i++) 
-        if (max.max_distance < value_b[i].max_distance) 
-            max = value_b[i];
 
-    // Send a to everyone
+    /*
+     * Get furthest point b
+     */
+    furthest_point b = get_furthest_point_parallel(point_a, start, end, threads);
+    b.process = me;
 
-    double *point_a = points[ortho_points[a].point_id];
-    double *point_b = points[ortho_points[b].point_id];
-
-    long a1 = ortho_points[a].point_id;
-    long b1 = ortho_points[b].point_id;
+    // Send value b
+    MPI_Send(&b, sizeof(furthest_point_mpi), furthest_point_mpi, 0, B_TAG, WORLD);
+    MPI_Recv(&sender, 1, MPI_INT, 0, PROCESS_TYPE_TAG, WORLD, MPI_STATUS_IGNORE);
     
+    if (sender) {
+        point_b = points[ortho_points[b.max].point_id];
+        for (int i = 0; i < max_processes; i++) {
+            if (i == me) continue;
+            MPI_Send(point_b, n_dims, MPI_DOUBLE, i, POINT_B_TAG, WORLD);
+        }
+    } else {
+        // Receive final b
+        point_b = malloc(sizeof(double) * n_dims);
+        MPI_Recv(point_b, n_dims, MPI_DOUBLE, MPI_ANY_SOURCE, POINT_B_TAG, WORLD, MPI_STATUS_IGNORE);
+    }
+
+    fprintf(stderr, "[PROCESS %d]: point a is", me);
+    for (int j = 0; j < n_dims; j++) {
+        fprintf(stderr, " %f", point_a[j]);
+    }
+    fprintf(stderr, "\n");
+
+    fprintf(stderr, "[PROCESS %d]: point b is", me);
+    for (int j = 0; j < n_dims; j++) {
+        fprintf(stderr, " %f", point_b[j]);
+    }
+    fprintf(stderr, "\n");
+
+    /*
+     * Calc projections
+     */
     calc_projections(start, end, threads, point_a, point_b);
 
+    for (int i = start; i < end; i++) {
+        fprintf(stderr, "[PROCESS %d]: projection at ortho_points %d is", me, i);
+        for (int j = 0; j < n_dims; j++) {
+            fprintf(stderr, " %f", ortho_points[i].center[j]);
+        }
+        fprintf(stderr, "\n");
+    }
+
+    MPI_Finalize();
+    exit(0);
 
     // Send end confirmation
     int confirmation = 1;
@@ -735,7 +838,7 @@ static void wait_mpi(int me, int begin, int end, int threads) {
     
     // Send node count
     long n_count = 0;
-    count_nodes(tree, &n_count);
+    //count_nodes(tree, &n_count);
     long node_count = n_count;
     MPI_Send(&node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
 
@@ -759,15 +862,15 @@ static void wait_mpi(int me, int begin, int end, int threads) {
     if (node_id[1]) {
         //fprintf(stderr, "Process %d starting print as main proc\n", me);
         current_print_proc = me + 1;
-        print_result = aux_print_tree_main_proc(tree, n_dims, points, n_count, node_id[0], me);
+        //print_result = aux_print_tree_main_proc(tree, n_dims, points, n_count, node_id[0], me);
     } else {  
-        print_result = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
+        //print_result = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
     }
 
     //fprintf(stderr, "Process %d return print to proc %d\n", me, node_sending);
     MPI_Send(&print_result, 1, MPI_LONG, node_sending, PRINT_TAG, WORLD);
 
-    free(new_ortho_points);
+    //free(new_ortho_points);
 
     //fprintf(stderr, "Process %d is ENDING\n", me);
     MPI_Finalize();
@@ -776,11 +879,16 @@ static void wait_mpi(int me, int begin, int end, int threads) {
 
 int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
     double exec_time;
+    double *first_point;
     long start, end;
+
+    n_dims = atoi(argv[1]);
 
     omp_set_nested(1);
     omp_set_dynamic(1);
     max_threads = omp_get_max_threads();
+
+    exec_time = -omp_get_wtime();
 
     int me;
     MPI_Init(&argc, &argv);
@@ -790,9 +898,25 @@ int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
     start = (n_samples / nprocs) * me;
     end = start + (n_samples / nprocs);
 
-    exec_time = -omp_get_wtime();
-    points = get_points_large(argc, argv, n_dims, n_samples, start, end);
-    max_size = n_samples / 2;
+    first_point = malloc(sizeof(double) * n_dims);
+    points = get_points_large(argc, argv, n_dims, n_samples, start, end, first_point);
+    n_samples = end - start;
+
+    fprintf(stderr, "[PROCESS %d] First points", me);
+    for (int j = 0; j < n_dims; j++) {
+        fprintf(stderr, " %f", first_point[j]);
+    }
+    fprintf(stderr, "\n");
+
+    for (int i = 0; i < n_samples; i++) {
+        fprintf(stderr, "[PROCESS %d] Points at %d is", me, i);
+        for (int j = 0; j < n_dims; j++) {
+            fprintf(stderr, " %f", points[i][j]);
+        }
+        fprintf(stderr, "\n");
+    }
+
+    create_mpi_struct(&furthest_point_mpi);
 
     /*
      * Get ortho projection of points in line ab
@@ -805,11 +929,11 @@ int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
         ortho_points[i].center = malloc(sizeof(double) * n_dims);
         ortho_points[i].point_id = i;
     }
-
+    
     if (me != 0)
-        wait_mpi(me, 0, nprocs, max_threads);
+        wait_mpi(first_point, 0, n_samples, me, nprocs, max_threads);
 
-    tree = build_tree_parallel_mpi(0, n_samples, 0, nprocs, max_threads);
+    tree = build_tree_parallel_mpi(first_point, 0, n_samples, 0, nprocs, max_threads);
     
     // Receive confirmation
     int confirmation;

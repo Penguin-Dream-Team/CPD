@@ -48,7 +48,7 @@ double **get_points(int argc, char *argv[], int n_dims, long np)
     return pt_arr;
 }
 
-double **get_points_large(int argc, char *argv[], int n_dims, long np, long start, long end)
+double **get_points_large(int argc, char *argv[], int n_dims, long np, long start, long end, double *first_point)
 {
     double **pt_arr;
     unsigned seed;
@@ -58,15 +58,26 @@ double **get_points_large(int argc, char *argv[], int n_dims, long np, long star
     seed = atoi(argv[3]);
     srandom(seed);
 
-    pt_arr = (double **) create_array_pts(n_dims, np);
+    pt_arr = (double **) create_array_pts(n_dims, end - start);
 
-    for(i = 0; i < np; i++)
-        for(j = 0; j < n_dims; j++) {
-            rand = random();
-            if (start <= i && i < end) {
-                pt_arr[i - start][j] = RANGE * ((double) rand) / RAND_MAX;
+    for(i = 0; i < np; i++) {
+        if (i == 0) {
+            for(j = 0; j < n_dims; j++) {
+                rand = random();
+                first_point[j] = RANGE * ((double) rand) / RAND_MAX;
+                if (start <= i && i < end) {
+                    pt_arr[i - start][j] = RANGE * ((double) rand) / RAND_MAX;
+                }
+            }
+        } else {
+            for(j = 0; j < n_dims; j++) {
+                rand = random();
+                if (start <= i && i < end) {
+                    pt_arr[i - start][j] = RANGE * ((double) rand) / RAND_MAX;
+                }
             }
         }
+    }
 
     #ifdef DEBUG
     for(i = 0; i < *np; i++)

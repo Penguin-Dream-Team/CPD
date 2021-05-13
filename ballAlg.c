@@ -140,6 +140,18 @@ node_t *build_tree(long start, long end) {
     double *point_a = points[ortho_points[a].point_id];
     double *point_b = points[ortho_points[b].point_id];
 
+    fprintf(stderr, "Point a is");
+    for (int j = 0; j < n_dims; j++) {
+        fprintf(stderr, " %f", point_a[j]);
+    }
+    fprintf(stderr, "\n");
+
+    fprintf(stderr, "Point b is");
+    for (int j = 0; j < n_dims; j++) {
+        fprintf(stderr, " %f", point_b[j]);
+    }
+    fprintf(stderr, "\n");
+
     /*
      * Get projections to allow median calc
      */
@@ -152,6 +164,14 @@ node_t *build_tree(long start, long end) {
         ortho_points[i].center[0] = projection * (point_b[0] - point_a[0]);
     }
 
+    for (int i = start; i < end; i++) {
+        fprintf(stderr, "Projection at ortho_points %d is", i);
+        for (int j = 0; j < n_dims; j++) {
+            fprintf(stderr, " %f", ortho_points[i].center[j]);
+        }
+        fprintf(stderr, "\n");
+    }
+    
     /*
      * Get median point which will be the center of the ball
      */
@@ -257,6 +277,14 @@ int main(int argc, char *argv[]) {
 
     exec_time = -omp_get_wtime();
     points = get_points(argc, argv, n_dims, n_samples);
+
+    for (int i = 0; i < n_samples; i++) {
+        fprintf(stderr, "Points at %d is", i);
+        for (int j = 0; j < n_dims; j++) {
+            fprintf(stderr, " %f", points[i][j]);
+        }
+        fprintf(stderr, "\n");
+    }
 
     /*
      * Get ortho projection of points in line ab
