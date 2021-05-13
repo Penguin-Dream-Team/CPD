@@ -14,18 +14,20 @@
 
 #define ELEM_SWAP(a,b) { register node_t t = (a); (a) = (b); (b) = t; }
 #define WORLD MPI_COMM_WORLD
-#define A_TAG 100
-#define B_TAG 101
-#define PROCESS_TAG 102
-#define POINT_A_TAG 103
-#define POINT_B_TAG 104
-#define PROCESS_TYPE_TAG 105
-#define CONFIRMATION_TAG 106
-#define COUNT_TAG 107
-#define NODE_TAG 108
-#define PRINT_TAG 109
-#define FOR_TAG 110
-#define FOR_RESPONSE_TAG 111
+#define A_TAG               100
+#define B_TAG               101
+#define PROCESS_TAG         102
+#define POINT_A_TAG         103
+#define POINT_B_TAG         104
+#define PROCESS_TYPE_TAG    105
+#define REGULAR_SAMPLES_TAG 106
+#define PIVOTS_TAG          107
+#define CONFIRMATION_TAG    108
+#define COUNT_TAG           109
+#define NODE_TAG            110
+#define PRINT_TAG           111
+#define FOR_TAG             112
+#define FOR_RESPONSE_TAG    113
 
 typedef struct {
     int process;
@@ -41,6 +43,7 @@ static int first = 0;
 static int current_print_proc = 0;
 static int nprocs = 0;
 MPI_Datatype furthest_point_mpi;
+MPI_Datatype ortho_point_mpi;
 
 static node_t *create_node(double *point, long id, double radius) {
     node_t *node = malloc(sizeof(node_t));
@@ -54,7 +57,7 @@ static node_t *create_node(double *point, long id, double radius) {
     return node;
 }
 
-static void create_mpi_struct(MPI_Datatype *data_type) {
+static void create_furthest_point_mpi(MPI_Datatype *data_type) {
     const int nitems = 1; 
     int blocklengths = 1;
     MPI_Datatype types[3] = { MPI_INT, MPI_LONG, MPI_DOUBLE }; 
@@ -63,6 +66,22 @@ static void create_mpi_struct(MPI_Datatype *data_type) {
     offsets[0] = offsetof(furthest_point, process);
     offsets[1] = offsetof(furthest_point, max);
     offsets[2] = offsetof(furthest_point, max_distance);
+
+    MPI_Type_create_struct(nitems, &blocklengths, offsets, types, data_type);
+    MPI_Type_commit(data_type);
+}
+
+static void create_ortho_point_mpi(MPI_Datatype *data_type) {
+    const int nitems = 1; 
+    int blocklengths = 1;
+    MPI_Datatype types[5] = { MPI_LONG, MPI_DOUBLE, MPI_DOUBLE, *data_type, *data_type }; 
+    MPI_Aint offsets[5]; 
+
+    offsets[0] = offsetof(node_t, point_id);
+    offsets[1] = offsetof(node_t, center);
+    offsets[2] = offsetof(node_t, radius);
+    offsets[3] = offsetof(node_t, L);
+    offsets[4] = offsetof(node_t, R);
 
     MPI_Type_create_struct(nitems, &blocklengths, offsets, types, data_type);
     MPI_Type_commit(data_type);
@@ -453,6 +472,24 @@ static node_t *build_tree_parallel_omp(long start, long end, int threads, int me
     return tree;
 }
 
+static int cmpfunc_ortho (const void *pa, const void *pb) {
+  const node_t *a = (const node_t *) pa;
+  const node_t *b = (const node_t *) pb;
+
+  if ((a->center[0] - b->center[0]) > 0) return 1;
+  else if ((a->center[0] - b->center[0]) < 0) return -1;
+  else return 0;
+}
+
+static int cmpfunc_double (const void *pa, const void *pb) {
+  const double *a = (const double *) pa;
+  const double *b = (const double *) pb;
+
+  if ((*a - *b) > 0) return 1;
+  else if ((*a - *b) < 0) return -1;
+  else return 0;
+}
+
 // not inclusive
 static node_t *build_tree_parallel_mpi(double *first_point, long start, long end, int me, int max_processes, int threads) {  
     //fprintf(stderr, "FUNCTION MPI Process: %d, Max_Process: %d, Threads: %d, Start: %ld, End: %ld\n", process, max_processes, threads, start, end);    
@@ -559,15 +596,82 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
         }
         fprintf(stderr, "\n");
     }
-
-    MPI_Finalize();
-    exit(0);
     
     /*
      * Get median point which will be the center of the ball
      */
 
-    // Somehow do this in parallel
+    // Sort ortho points
+    qsort(ortho_points, end, sizeof(node_t), cmpfunc_ortho);
+    
+    fprintf(stderr, "[PROCESS %d]: ortho_points sorted ", me);
+    for (int i = 0; i < end; i++) {
+        fprintf(stderr, " %f", ortho_points[i].center[0]);
+    }
+    fprintf(stderr, "\n");
+
+    double regular_samples[max_processes * max_processes];
+    for (int i = 0; i < max_processes; i++) {
+        regular_samples[i] = ortho_points[(end / nprocs) * i].center[0];
+    }  
+
+    for (int i = 1; i < max_processes; i++) {
+        MPI_Recv(&regular_samples[i * max_processes], max_processes, MPI_DOUBLE, MPI_ANY_SOURCE, REGULAR_SAMPLES_TAG, WORLD, MPI_STATUS_IGNORE);
+    }
+
+    // Sort regular samples
+    qsort(regular_samples, max_processes * max_processes, sizeof(double), cmpfunc_double);
+
+    fprintf(stderr, "[PROCESS %d]: regular_samples sorted ", me);
+    for (int i = 0; i < max_processes * max_processes; i++) {
+        fprintf(stderr, " %f", regular_samples[i]);
+    }
+    fprintf(stderr, "\n");
+
+    double pivots[max_processes - 1];
+    double first_pivot = max_processes + (max_processes / 2) - 1;
+    double last_pivot = (max_processes - 1) * max_processes + (max_processes / 2) - 1;
+    for (int i = 0, pivot = first_pivot; i <= last_pivot; i += max_processes) {
+        pivots[i++] = regular_samples[pivot];
+    }
+
+    //Send pivots
+    for (int i = 1; i < max_processes; i++) {
+        MPI_Send(pivots, max_processes - 1, MPI_DOUBLE, i, PIVOTS_TAG, WORLD);
+    }
+
+    fprintf(stderr, "[PROCESS %d]: pivots ", me);
+    for (int i = 0; i < max_processes - 1; i++) {
+        fprintf(stderr, " %f", pivots[i]);
+    }
+    fprintf(stderr, "\n");
+
+    int start_index;
+    int send_counts[max_processes];
+    int send_displs[max_processes];
+    for (int i = 0, j = 0; j < max_processes - 1; i++) {
+        if ((ortho_points[i].center[0] - pivots[j]) > 0) {
+            if (me == j++) {
+                start_index = i;
+                send_counts[me] = 0;
+                send_displs[me] = 0;
+                send_displs[me + 1] = 0;
+            } else {
+                send_counts[j] = i - send_counts[j - 1];
+                send_displs[j + 1] = send_counts[j];
+                j++;
+            }
+        }
+    }
+    send_counts[j] = end - send_counts[j - 1];
+
+    // Fazer 2 all to all. O primeiro envia os counts. ENtre os 2 faz se as contas dos displacements. Por ultimo envia se os pontos
+    // Precisa de um barrier ????
+    MPI_Alltoall(ortho_points[k], send_counts, send_displs, ortho_point_mpi, recv_count, rcv_displs, ortho_point_mpi, WORLD);
+
+    MPI_Finalize();
+    exit(0);
+
     medianValues median_ids = quickSelect(ortho_points, start, end);
 
     // Send median to process 0
@@ -781,7 +885,6 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
         MPI_Recv(point_a, n_dims, MPI_DOUBLE, MPI_ANY_SOURCE, POINT_A_TAG, WORLD, MPI_STATUS_IGNORE);
     }
 
-
     /*
      * Get furthest point b
      */
@@ -791,7 +894,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     // Send value b
     MPI_Send(&b, sizeof(furthest_point_mpi), furthest_point_mpi, 0, B_TAG, WORLD);
     MPI_Recv(&sender, 1, MPI_INT, 0, PROCESS_TYPE_TAG, WORLD, MPI_STATUS_IGNORE);
-    
+
     if (sender) {
         point_b = points[ortho_points[b.max].point_id];
         for (int i = 0; i < max_processes; i++) {
@@ -828,6 +931,36 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
         }
         fprintf(stderr, "\n");
     }
+
+    /*
+     * Get median point which will be the center of the ball
+     */
+
+    // Sort ortho points
+    qsort(ortho_points, end, sizeof(node_t), cmpfunc_ortho);
+    
+    fprintf(stderr, "[PROCESS %d]: ortho_points sorted ", me);
+    for (int i = 0; i < end; i++) {
+        fprintf(stderr, " %f", ortho_points[i].center[0]);
+    }
+    fprintf(stderr, "\n");
+
+    double regular_samples[max_processes];
+    for (int i = 0; i < max_processes; i++) {
+        regular_samples[i] = ortho_points[(end / nprocs) * i].center[0];
+    }  
+
+    MPI_Send(regular_samples, max_processes, MPI_DOUBLE, 0, REGULAR_SAMPLES_TAG, WORLD);
+
+    //Receive pivots
+    double pivots[max_processes - 1];
+    MPI_Recv(pivots, max_processes - 1, MPI_DOUBLE, 0, PIVOTS_TAG, WORLD, MPI_STATUS_IGNORE);
+
+    fprintf(stderr, "[PROCESS %d]: pivots ", me);
+    for (int i = 0; i < max_processes - 1; i++) {
+        fprintf(stderr, " %f", pivots[i]);
+    }
+    fprintf(stderr, "\n");
 
     MPI_Finalize();
     exit(0);
@@ -916,7 +1049,8 @@ int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
         fprintf(stderr, "\n");
     }
 
-    create_mpi_struct(&furthest_point_mpi);
+    create_furthest_point_mpi(&furthest_point_mpi);
+    create_ortho_point_mpi(&ortho_point_mpi);
 
     /*
      * Get ortho projection of points in line ab
