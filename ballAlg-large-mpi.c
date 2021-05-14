@@ -646,28 +646,47 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     }
     fprintf(stderr, "\n");
 
-    int start_index;
+    for (int i = 0, pi = 0; i < max_processes * max_processes; i++) {
+        if (regular_samples[i] > pivots[pi]) {
+            pi++;
+        }
+        if (pi == max_processes - 1) {
+            send_counts[max_processes - 1] = max_processes * max_processes - i;
+            break;
+        }
+        send_counts[index]++; 
+    }
+
+    /*int start_index;
     int send_counts[max_processes];
-    int send_displs[max_processes];
     for (int i = 0, j = 0; j < max_processes - 1; i++) {
         if ((ortho_points[i].center[0] - pivots[j]) > 0) {
             if (me == j++) {
                 start_index = i;
                 send_counts[me] = 0;
-                send_displs[me] = 0;
-                send_displs[me + 1] = 0;
             } else {
                 send_counts[j] = i - send_counts[j - 1];
-                send_displs[j + 1] = send_counts[j];
                 j++;
             }
         }
     }
-    send_counts[j] = end - send_counts[j - 1];
+    send_counts[j] = end - send_counts[j - 1];*/
+
+    int send_displs[max_processes];
+    int recv_counts[max_processes];
+    int recv_displs[max_processes];
+    MPI_Alltoall(send_counts, 1, MPI_INT, recv_counts, 1, MPI_INT, WORLD);
+
+    send_displs[0] = 0;
+    recv_displs[0] = 0;
+    for ( i = 1; i < p; i++) {
+        send_displs[i] = send_counts[i - 1] + send_displs[i - 1];
+        recv_displs[i] = recv_counts[i - 1] + recv_displs[i - 1];
+    }
 
     // Fazer 2 all to all. O primeiro envia os counts. ENtre os 2 faz se as contas dos displacements. Por ultimo envia se os pontos
     // Precisa de um barrier ????
-    MPI_Alltoall(ortho_points[k], send_counts, send_displs, ortho_point_mpi, recv_count, rcv_displs, ortho_point_mpi, WORLD);
+    MPI_Alltoallv(ortho_points, send_counts, send_displs, ortho_point_mpi, recv_count, rcv_displs, ortho_point_mpi, WORLD);
 
     MPI_Finalize();
     exit(0);
