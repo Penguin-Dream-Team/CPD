@@ -71,22 +71,6 @@ static void create_furthest_point_mpi(MPI_Datatype *data_type) {
     MPI_Type_commit(data_type);
 }
 
-static void create_ortho_point_mpi(MPI_Datatype *data_type) {
-    const int nitems = 1; 
-    int blocklengths = 1;
-    MPI_Datatype types[5] = { MPI_LONG, MPI_DOUBLE, MPI_DOUBLE, *data_type, *data_type }; 
-    MPI_Aint offsets[5]; 
-
-    offsets[0] = offsetof(node_t, point_id);
-    offsets[1] = offsetof(node_t, center);
-    offsets[2] = offsetof(node_t, radius);
-    offsets[3] = offsetof(node_t, L);
-    offsets[4] = offsetof(node_t, R);
-
-    MPI_Type_create_struct(nitems, &blocklengths, offsets, types, data_type);
-    MPI_Type_commit(data_type);
-}
-
 static void free_node(node_t *node) {
     if (node->radius != 0) {
         free(node->center);
@@ -610,6 +594,12 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     }
     fprintf(stderr, "\n");
 
+    fprintf(stderr, "[PROCESS %d]: ortho_points point id ", me);
+    for (int i = 0; i < end; i++) {
+        fprintf(stderr, " %ld", ortho_points[i].point_id);
+    }
+    fprintf(stderr, "\n");
+
     double regular_samples[max_processes * max_processes];
     for (int i = 0; i < max_processes; i++) {
         regular_samples[i] = ortho_points[(end / nprocs) * i].center[0];
@@ -646,47 +636,67 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     }
     fprintf(stderr, "\n");
 
-    for (int i = 0, pi = 0; i < max_processes * max_processes; i++) {
-        if (regular_samples[i] > pivots[pi]) {
+    int send_counts[max_processes];
+    send_counts[0] = 0; 
+    for (int i = 0, pi = 0; i < end; i++) {
+        fprintf(stderr, "PROCESS %d => Ortho Points[%d] %f and Pivots[%d] %f\n", me, i, ortho_points[i].center[0], pi, pivots[pi]);
+        if ((ortho_points[i].center[0] - pivots[pi]) > 0) {
             pi++;
+            send_counts[pi] = 0;
         }
         if (pi == max_processes - 1) {
-            send_counts[max_processes - 1] = max_processes * max_processes - i;
+            send_counts[max_processes - 1] = (end - i) * n_dims;
             break;
         }
-        send_counts[index]++; 
+        send_counts[pi] += n_dims; 
     }
-
-    /*int start_index;
-    int send_counts[max_processes];
-    for (int i = 0, j = 0; j < max_processes - 1; i++) {
-        if ((ortho_points[i].center[0] - pivots[j]) > 0) {
-            if (me == j++) {
-                start_index = i;
-                send_counts[me] = 0;
-            } else {
-                send_counts[j] = i - send_counts[j - 1];
-                j++;
-            }
-        }
-    }
-    send_counts[j] = end - send_counts[j - 1];*/
 
     int send_displs[max_processes];
     int recv_counts[max_processes];
     int recv_displs[max_processes];
+
+    MPI_Barrier(WORLD);
     MPI_Alltoall(send_counts, 1, MPI_INT, recv_counts, 1, MPI_INT, WORLD);
+    
+    fprintf(stderr, "PROCESS %d SEND COUNTS", me);
+    for (int i = 0; i < max_processes; i++) {
+        fprintf(stderr, " %d", send_counts[i]);
+    }
+    fprintf(stderr, "\n");
 
     send_displs[0] = 0;
     recv_displs[0] = 0;
-    for ( i = 1; i < p; i++) {
+    for (int i = 1; i < max_processes; i++) {
         send_displs[i] = send_counts[i - 1] + send_displs[i - 1];
         recv_displs[i] = recv_counts[i - 1] + recv_displs[i - 1];
     }
 
-    // Fazer 2 all to all. O primeiro envia os counts. ENtre os 2 faz se as contas dos displacements. Por ultimo envia se os pontos
-    // Precisa de um barrier ????
-    MPI_Alltoallv(ortho_points, send_counts, send_displs, ortho_point_mpi, recv_count, rcv_displs, ortho_point_mpi, WORLD);
+    double **points_to_send = (double **) create_array_pts(n_dims, end);
+    for (int i = 0; i < end; i++) {
+        points_to_send[i] = points[ortho_points[i].point_id];
+    }
+    
+    for (int i = 0; i < end; i++) {
+        fprintf(stderr, "[PROCESS %d]: points to be sent: ", me);
+        for (int j = 0; j < n_dims; j++) {
+            fprintf(stderr, " %f", points_to_send[i][j]);
+        }
+        fprintf(stderr, "\n");
+    }
+
+    MPI_Barrier(WORLD);
+    MPI_Alltoallv(&(points_to_send[0][0]), send_counts, send_displs, MPI_DOUBLE, &(points[0][0]), recv_counts, recv_displs, MPI_DOUBLE, WORLD);
+
+    //free(points_to_send[0]);
+    //free(points_to_send);
+
+    for (int i = 0; i < end; i++) {
+        fprintf(stderr, "[PROCESS %d]: points after Alltoall: ", me);
+        for (int j = 0; j < n_dims; j++) {
+            fprintf(stderr, " %f", points[i][j]);
+        }
+        fprintf(stderr, "\n");
+    }
 
     MPI_Finalize();
     exit(0);
@@ -964,6 +974,12 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     }
     fprintf(stderr, "\n");
 
+    fprintf(stderr, "[PROCESS %d]: ortho_points point id ", me);
+    for (int i = 0; i < end; i++) {
+        fprintf(stderr, " %ld", ortho_points[i].point_id);
+    }
+    fprintf(stderr, "\n");
+
     double regular_samples[max_processes];
     for (int i = 0; i < max_processes; i++) {
         regular_samples[i] = ortho_points[(end / nprocs) * i].center[0];
@@ -980,6 +996,60 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
         fprintf(stderr, " %f", pivots[i]);
     }
     fprintf(stderr, "\n");
+
+    int send_counts[max_processes];
+    send_counts[0] = 0; 
+    for (int i = 0, pi = 0; i < end; i++) {
+        fprintf(stderr, "PROCESS %d => Ortho Points[%d] %f and Pivots[%d] %f\n", me, i, ortho_points[i].center[0], pi, pivots[pi]);
+        if ((ortho_points[i].center[0] - pivots[pi]) > 0) {
+            pi++;
+            send_counts[pi] = 0;
+        }
+        if (pi == max_processes - 1) {
+            send_counts[max_processes - 1] = (end - i) * n_dims;
+            break;
+        }
+        send_counts[pi] += n_dims; 
+    }
+
+    int send_displs[max_processes];
+    int recv_counts[max_processes];
+    int recv_displs[max_processes];
+    
+    MPI_Barrier(WORLD);
+    MPI_Alltoall(send_counts, 1, MPI_INT, recv_counts, 1, MPI_INT, WORLD);
+
+    fprintf(stderr, "PROCESS %d SEND COUNTS", me);
+    for (int i = 0; i < max_processes; i++) {
+        fprintf(stderr, " %d", send_counts[i]);
+    }
+    fprintf(stderr, "\n");
+    
+    send_displs[0] = 0;
+    recv_displs[0] = 0;
+    for (int i = 1; i < max_processes; i++) {
+        send_displs[i] = send_counts[i - 1] + send_displs[i - 1];
+        recv_displs[i] = recv_counts[i - 1] + recv_displs[i - 1];
+    }
+
+    double **points_to_send = (double **) create_array_pts(n_dims, end);
+    for (int i = 0; i < end; i++) {
+        points_to_send[i] = points[ortho_points[i].point_id];
+    }
+
+    MPI_Barrier(WORLD);
+    MPI_Alltoallv(&(points_to_send[0][0]), send_counts, send_displs, MPI_DOUBLE, &(points[0][0]), recv_counts, recv_displs, MPI_DOUBLE, WORLD);
+
+    //free(points_to_send[0]);
+    //free(points_to_send);
+
+    for (int i = 0; i < end; i++) {
+        fprintf(stderr, "[PROCESS %d]: points after Alltoall: ", me);
+        for (int j = 0; j < n_dims; j++) {
+            fprintf(stderr, " %f", points[i][j]);
+        }
+        fprintf(stderr, "\n");
+    }
 
     MPI_Finalize();
     exit(0);
@@ -1069,7 +1139,6 @@ int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
     }
 
     create_furthest_point_mpi(&furthest_point_mpi);
-    create_ortho_point_mpi(&ortho_point_mpi);
 
     /*
      * Get ortho projection of points in line ab
