@@ -203,15 +203,15 @@ static void calc_ortho_projection(double *point_a, double *point_b, double *p1, 
     }
 }
 
-static void calc_ortho_projection_mpi(double *point_a, double *point_b, double **p1, double **p2) {
+static void calc_ortho_projection_mpi(double *point_a, double *point_b, double *p1, double *p2) {
     double top_inner_product1 = 0;
     double top_inner_product2 = 0;
     double bot_inner_product = 0;
 
     for (int i = 0; i < n_dims; i++) {
         double b_minus_a = point_b[i] - point_a[i];
-        top_inner_product1 += (*p1[i] - point_a[i]) * b_minus_a;
-        top_inner_product2 += (*p2[i] - point_a[i]) * b_minus_a;
+        top_inner_product1 += (p1[i] - point_a[i]) * b_minus_a;
+        top_inner_product2 += (p2[i] - point_a[i]) * b_minus_a;
         bot_inner_product += b_minus_a * b_minus_a;
     }
 
@@ -219,8 +219,9 @@ static void calc_ortho_projection_mpi(double *point_a, double *point_b, double *
     double inner_product2 = top_inner_product2 / bot_inner_product;
 
     for (int i = 0; i < n_dims; i++) {
-        *p1[i] = inner_product1 * (point_b[i] - point_a[i]) + point_a[i];
-        *p2[i] = inner_product2 * (point_b[i] - point_a[i]) + point_a[i];
+        p1[i] = inner_product1 * (point_b[i] - point_a[i]) + point_a[i];
+        fprintf(stderr, "median 1 inside calc %d = %f\n", i, p1[i]);
+        p2[i] = inner_product2 * (point_b[i] - point_a[i]) + point_a[i];
     }
 }
 
@@ -714,6 +715,9 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     MPI_Barrier(WORLD);
     MPI_Alltoallv(&(points_to_send[0][0]), send_counts, send_displs, MPI_DOUBLE, &(points_to_recv[0][0]), recv_counts, recv_displs, MPI_DOUBLE, WORLD);
 
+    // Sorting points after exchange
+    qsort(points_to_recv, end, sizeof(double), cmpfunc_double);
+
     //free(points_to_send[0]);
     //free(points_to_send);
 
@@ -741,7 +745,7 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
             MPI_Recv(p1, n_dims, MPI_DOUBLE, (nprocs / 2) - 1, MEDIAN_POINT_TAG, WORLD, MPI_STATUS_IGNORE);
             MPI_Recv(p2, n_dims, MPI_DOUBLE, (nprocs / 2)    , MEDIAN_POINT_TAG, WORLD, MPI_STATUS_IGNORE);
         } else {
-            p1 = points[end - 1];
+            p1 = points_to_recv[end - 1];
             MPI_Recv(p2, n_dims, MPI_DOUBLE, me + 1          , MEDIAN_POINT_TAG, WORLD, MPI_STATUS_IGNORE);
         }
     } else {
@@ -766,7 +770,11 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
         fprintf(stderr, " %f", p2[j]);
     }
     fprintf(stderr, "\n");
-    calc_ortho_projection_mpi(point_a, point_b, &p1, &p2);
+    calc_ortho_projection_mpi(point_a, point_b, p1, p2);
+
+    for (int i = 0; i < n_dims; i++) {
+        fprintf(stderr, "median 1 outside calc %d = %f\n", i, p1[i]);
+    }
 
     /*
      * Get the radius of the ball (largest distance)
@@ -781,7 +789,11 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
         }
     }
 
-    fprintf(stderr, "Sending median\n");
+    fprintf(stderr, "Sending median ");
+    for (int j = 0; j < n_dims; j++) {
+        fprintf(stderr, " %f", median_point[j]);
+    }
+    fprintf(stderr, "\n");
     // Send median to other processes
     for (int i = 1; i < max_processes; i++) {
         MPI_Send(median_point, n_dims, MPI_DOUBLE, i, MEDIAN_POINT_TAG, WORLD);
@@ -792,7 +804,7 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     double furthest_distance = get_furthest_distance_parallel(median_point, start, end, threads);
     double others_furthest_distance[max_processes - 1];
     for (int i = 1; i < max_processes; i++) {
-        MPI_Recv(&others_furthest_distance[i - 1], 1, MPI_DOUBLE, MPI_ANY_SOURCE, FURTHEST_DISTANCE_TAG, WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&others_furthest_distance[i - 1], 1, MPI_DOUBLE, i, FURTHEST_DISTANCE_TAG, WORLD, MPI_STATUS_IGNORE);
     }
 
     for (int i = 1; i < max_processes; i++) {
@@ -803,50 +815,37 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     }
 
     tree->radius = sqrt(furthest_distance);
-
-    MPI_Finalize();
-    exit(0);
+    fprintf(stderr, "Tree radius is %f\n", tree->radius);
 
     /*
      * Split processes in smaller groups or start serial version
      */
-    int diff = (max_processes - process) / 2;
+    points = points_to_recv;
 
-    /*long size = end; //- median_ids.second;
-    if ((size > 1000)) {
-        //tree->L = build_tree_parallel_mpi(first_point, start, median_ids.second, process, max_processes, threads);
-        
-        //tree->L = build_tree_parallel_mpi(first_point, median_ids.second, end, process, max_processes, threads);
+    if (max_processes > 2) {
+        build_tree_parallel_mpi(points[0], 0, end, me, max_processes / 2, threads);
 
     } else {
         #pragma omp parallel
         {
             #pragma omp single 
             {
-                if (threads > 2) {
-                    //#pragma omp task
-                    //tree->L = build_tree_parallel_omp(start, median_ids.second, (threads + 1) / 2, process);
-                } else {
-                    #pragma omp task
-                    tree->L = build_tree(start, median_ids.second);
-                }
+                #pragma omp task
+                tree->L = build_tree_parallel_omp(start, median_ids.second, (threads + 1) / 2, process);
 
                 if (threads > 2) {
                     if (threads != 3) {
-                        //#pragma omp task
-                        //tree->R = build_tree_parallel_omp(median_ids.second, end, threads / 2, process);
+                        #pragma omp task
+                        tree->R = build_tree_parallel_omp(median_ids.second, end, threads / 2, process);
                     } else {
                         #pragma omp task
                         tree->R = build_tree(median_ids.second, end);
                     }
-                } else {
-                    #pragma omp task
-                    tree->R = build_tree(median_ids.second, end);
                 }    
             }
             #pragma omp taskwait
         }
-    }*/
+    }
 
     return tree;
 }
@@ -1122,6 +1121,9 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     MPI_Barrier(WORLD);
     MPI_Alltoallv(&(points_to_send[0][0]), send_counts, send_displs, MPI_DOUBLE, &(points_to_recv[0][0]), recv_counts, recv_displs, MPI_DOUBLE, WORLD);
 
+    // Sorting points after exchange
+    qsort(points_to_recv, end, sizeof(double), cmpfunc_double);
+
     //free(points_to_send[0]);
     //free(points_to_send);
 
@@ -1146,10 +1148,10 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     fprintf(stderr, "I am process %d and i am sending my median values\n", me);
     if (initial_size % 2 == 0) {
         if (nprocs > 2) {
-            if ((nprocs / 2 - 1) == me) MPI_Send(points[end - 1], n_dims, MPI_DOUBLE, 0, MEDIAN_POINT_TAG, WORLD);
-            else if ((nprocs / 2) == me) MPI_Send(points[0], n_dims, MPI_DOUBLE, 0, MEDIAN_POINT_TAG, WORLD);
+            if ((nprocs / 2 - 1) == me) MPI_Send(points_to_recv[end - 1], n_dims, MPI_DOUBLE, 0, MEDIAN_POINT_TAG, WORLD);
+            else if ((nprocs / 2) == me) MPI_Send(points_to_recv[0], n_dims, MPI_DOUBLE, 0, MEDIAN_POINT_TAG, WORLD);
         } 
-        else MPI_Send(points[0], n_dims, MPI_DOUBLE, 0, MEDIAN_POINT_TAG, WORLD);
+        else MPI_Send(points_to_recv[0], n_dims, MPI_DOUBLE, 0, MEDIAN_POINT_TAG, WORLD);
     } else {
         // 1 process
     }
@@ -1159,7 +1161,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
      */
     double *median_point = malloc(sizeof(double) * n_dims);
     fprintf(stderr, "I am process %d and i am receiving my median point\n", me);
-    MPI_Recv(&median_point, n_dims, MPI_DOUBLE, 0, MEDIAN_POINT_TAG, WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(median_point, n_dims, MPI_DOUBLE, 0, MEDIAN_POINT_TAG, WORLD, MPI_STATUS_IGNORE);
 
     double furthest_distance = get_furthest_distance_parallel(median_point, start, end, threads);
     fprintf(stderr, "I am process %d and i am sending my furthest distance = %f\n", me, furthest_distance);
@@ -1209,8 +1211,66 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     //free(new_ortho_points);
 
     //fprintf(stderr, "Process %d is ENDING\n", me);
-    MPI_Finalize();
-    exit(0);
+    
+    /*
+     * Split processes in smaller groups or start serial version
+     */
+    points = points_to_recv;
+
+        for (int i = process + 1, d = 1; i < max_processes; i++, d++) {
+            //printf("Processor %d Sent args to %d\n",process, i);
+            ranks[d] = i;
+        }
+
+        //printf("Create world group\n");
+        MPI_Group world_group;
+        MPI_Comm_group(WORLD, &world_group);
+
+        //printf("Create prime group\n");
+        MPI_Group prime_group;
+        MPI_Group_incl(world_group, group_size, ranks, &prime_group);
+
+        // Create a new communicator based on the group
+        //printf("Create prime comm\n");
+        MPI_Comm prime_comm;
+        MPI_Comm_create_group(MPI_COMM_WORLD, prime_group, 0, &prime_comm);
+        //printf("Created prime comm\n");
+
+        int root_rank;
+        MPI_Comm_rank(prime_comm, &root_rank);
+
+    if (max_processes > 2) {
+        int world_rank, world_size;
+        MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+        MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+        int color = world_rank / 2;
+
+        // Split the communicator based on the color and use the
+        // original rank for ordering
+        MPI_Comm row_comm;
+        MPI_Comm_split(MPI_COMM_WORLD, color, world_rank, &row_comm);
+
+        int row_rank, row_size;
+        MPI_Comm_rank(row_comm, &row_rank);
+        MPI_Comm_size(row_comm, &row_size);
+
+        printf("WORLD RANK/SIZE: %d/%d \t ROW RANK/SIZE: %d/%d\n",
+            world_rank, world_size, row_rank, row_size);
+
+        MPI_Comm_free(&row_comm);
+
+        int half_max_processes = max_processes / 2;
+        if (half_max_processes == me) {
+            build_tree_parallel_mpi(points[0], 0, end, me, half_max_processes, new_group, threads);
+        } else {
+            if (me > half_max_processes) { 
+                master = half_max_processes;
+                group = new_group;
+            }
+            wait_mpi(points[0], 0, end, master, me, half_max_processes, group, threads);
+        }
+    }
 }
 
 int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {

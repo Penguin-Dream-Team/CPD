@@ -189,6 +189,18 @@ node_t *build_tree(long start, long end) {
     /* Calc ortho projection of median points */
     double *p1 = points[point_median_1.point_id];
     double *p2 = points[point_median_2.point_id];
+    fprintf(stderr, "median 1 ");
+    for (int j = 0; j < n_dims; j++) {
+        fprintf(stderr, " %f", p1[j]);
+    }
+    fprintf(stderr, "\n");
+
+    fprintf(stderr, "median 2 ");
+    for (int j = 0; j < n_dims; j++) {
+        fprintf(stderr, " %f", p2[j]);
+    }
+    fprintf(stderr, "\n");
+
     calc_ortho_projection(point_a, point_b, p1, p2, ortho_points, median_ids.first, median_ids.second);
 
     /*
