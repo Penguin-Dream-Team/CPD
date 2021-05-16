@@ -43,9 +43,11 @@ static int n_dims, max_threads, sent = 0;
 static long initial_size;
 static int first = 0;
 static int current_print_proc = 0;
-static int nprocs = 0;
+static int initial_procs, nprocs = 0;
+static int amount_communicators = 0;
 MPI_Datatype furthest_point_mpi;
 MPI_Datatype ortho_point_mpi;
+MPI_Comm *communicators;
 
 static node_t *create_node(double *point, long id, double radius) {
     node_t *node = malloc(sizeof(node_t));
@@ -499,7 +501,7 @@ static int cmpfunc_double (const void *pa, const void *pb) {
 }
 
 // not inclusive
-static node_t *build_tree_parallel_mpi(double *first_point, long start, long end, int me, int max_processes, int threads) {  
+static node_t *build_tree_parallel_mpi(double *first_point, long start, long end, int me, int max_processes, MPI_Comm communicator, int communicator_index, int threads) {  
     //fprintf(stderr, "FUNCTION MPI Process: %d, Max_Process: %d, Threads: %d, Start: %ld, End: %ld\n", process, max_processes, threads, start, end);    
     double *point_a, *point_b;
     int process, sender;
@@ -823,7 +825,9 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     points = points_to_recv;
 
     if (max_processes > 2) {
-        build_tree_parallel_mpi(points[0], 0, end, me, max_processes / 2, threads);
+        int new_communicator_index = communicator_index++;
+        communicator = communicators[new_communicator_index];
+        build_tree_parallel_mpi(points[0], 0, end, me, max_processes / 2, communicator, new_communicator_index, threads);
 
     } else {
         #pragma omp parallel
@@ -831,15 +835,15 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
             #pragma omp single 
             {
                 #pragma omp task
-                tree->L = build_tree_parallel_omp(start, median_ids.second, (threads + 1) / 2, process);
+                tree->L = build_tree_parallel_omp(start, end / 2, (threads + 1) / 2, process);
 
                 if (threads > 2) {
                     if (threads != 3) {
                         #pragma omp task
-                        tree->R = build_tree_parallel_omp(median_ids.second, end, threads / 2, process);
+                        tree->R = build_tree_parallel_omp(end / 2, end, (threads / 2), process);
                     } else {
                         #pragma omp task
-                        tree->R = build_tree(median_ids.second, end);
+                        tree->R = build_tree(end / 2, end);
                     }
                 }    
             }
@@ -955,7 +959,7 @@ static void print_tree(node_t *tree, int n_dims, double **points, int prev_count
     aux_print_tree(tree, n_dims, points, n_count, 0);
 }
 
-static void wait_mpi(double *first_point, long start, long end, int me, int max_processes, int threads) {
+static void wait_mpi(double *first_point, long start, long end, int me, int max_processes, MPI_Comm communicator, int communicator_index, int threads) {
     //fprintf(stderr, "FUNCTION MPI Process: %d, Max_Process: %d, Threads: %d, Start: %ld, End: %ld\n", process, max_processes, threads, start, end);    
     double *point_a, *point_b;
     int sender;
@@ -1167,18 +1171,36 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     fprintf(stderr, "I am process %d and i am sending my furthest distance = %f\n", me, furthest_distance);
     MPI_Send(&furthest_distance, 1, MPI_DOUBLE, 0, FURTHEST_DISTANCE_TAG, WORLD);
     
-    MPI_Finalize();
-    exit(0);
+    /*
+     * Split processes in smaller groups or start serial version
+     */
+    points = points_to_recv;
+    if (max_processes > 2) {
+        int half_max_processes = max_processes / 2;
+
+        if (me < half_max_processes) communicator_index++;
+        else communicator_index += half_max_processes;
+            
+        communicator = communicators[communicator_index];
+        me = MPI_Comm_rank(communicator, &me);
+
+        if (me == 0) {
+            build_tree_parallel_mpi(points[0], 0, end, me, half_max_processes, communicator, communicator_index++, threads);
+        } else {
+            wait_mpi(points[0], 0, end, me, half_max_processes, communicator, communicator_index, threads);
+        }
+    }
 
     // Send end confirmation
-    int confirmation = 1;
-    MPI_Send(&confirmation, 1, MPI_INT, 0, CONFIRMATION_TAG, WORLD);
-    
+    int confirmation[1] = {1};
+    MPI_Send(confirmation, 1, MPI_INT, 0, CONFIRMATION_TAG, WORLD);
+    //printf("//////////////%d sent confirmation\n", me);
+
     // Send node count
     long n_count = 0;
-    //count_nodes(tree, &n_count);
-    long node_count = n_count;
-    MPI_Send(&node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
+    count_nodes(tree, &n_count);
+    long node_count[1] = {n_count};
+    MPI_Send(node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
 
     // Receive node id and print type 
     int node_sending = 0;
@@ -1193,84 +1215,49 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     }
     //fprintf(stderr, "I am process %d waiting for %d to contact me\n", me, node_sending);
     long node_id[2];
-    MPI_Recv(node_id, 2, MPI_LONG, node_sending, NODE_TAG, WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(node_id, 2, MPI_LONG, node_sending, NODE_TAG, WORLD, &statuses[2]);
     //fprintf(stderr, "I am process %d | received a message from process %d\n", me, node_sending);
 
-    long print_result;
+    long print_result[1];
     if (node_id[1]) {
         //fprintf(stderr, "Process %d starting print as main proc\n", me);
         current_print_proc = me + 1;
-        //print_result = aux_print_tree_main_proc(tree, n_dims, points, n_count, node_id[0], me);
+        print_result[0] = aux_print_tree_main_proc(tree, n_dims, points, n_count, node_id[0], me);
     } else {  
-        //print_result = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
+        print_result[0] = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
     }
 
     //fprintf(stderr, "Process %d return print to proc %d\n", me, node_sending);
-    MPI_Send(&print_result, 1, MPI_LONG, node_sending, PRINT_TAG, WORLD);
+    MPI_Send(print_result, 1, MPI_LONG, node_sending, PRINT_TAG, WORLD);
 
-    //free(new_ortho_points);
+    free(new_ortho_points);
 
     //fprintf(stderr, "Process %d is ENDING\n", me);
-    
-    /*
-     * Split processes in smaller groups or start serial version
-     */
-    points = points_to_recv;
+    MPI_Finalize();
+    exit(0);
+}
 
-        for (int i = process + 1, d = 1; i < max_processes; i++, d++) {
-            //printf("Processor %d Sent args to %d\n",process, i);
-            ranks[d] = i;
-        }
+static void create_group_communicators(MPI_Group world_group, int processes, int *ranks, int communicator_index) {
+    if (processes == 1) return;
 
-        //printf("Create world group\n");
-        MPI_Group world_group;
-        MPI_Comm_group(WORLD, &world_group);
+    MPI_Group new_group;
+    MPI_Group_incl(world_group, initial_procs, ranks, &new_group);
 
-        //printf("Create prime group\n");
-        MPI_Group prime_group;
-        MPI_Group_incl(world_group, group_size, ranks, &prime_group);
+    MPI_Comm new_comm;
+    MPI_Comm_create_group(MPI_COMM_WORLD, new_group, 0, &new_comm);
 
-        // Create a new communicator based on the group
-        //printf("Create prime comm\n");
-        MPI_Comm prime_comm;
-        MPI_Comm_create_group(MPI_COMM_WORLD, prime_group, 0, &prime_comm);
-        //printf("Created prime comm\n");
+    communicators[communicator_index] = new_comm;
 
-        int root_rank;
-        MPI_Comm_rank(prime_comm, &root_rank);
-
-    if (max_processes > 2) {
-        int world_rank, world_size;
-        MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-        MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-
-        int color = world_rank / 2;
-
-        // Split the communicator based on the color and use the
-        // original rank for ordering
-        MPI_Comm row_comm;
-        MPI_Comm_split(MPI_COMM_WORLD, color, world_rank, &row_comm);
-
-        int row_rank, row_size;
-        MPI_Comm_rank(row_comm, &row_rank);
-        MPI_Comm_size(row_comm, &row_size);
-
-        printf("WORLD RANK/SIZE: %d/%d \t ROW RANK/SIZE: %d/%d\n",
-            world_rank, world_size, row_rank, row_size);
-
-        MPI_Comm_free(&row_comm);
-
-        int half_max_processes = max_processes / 2;
-        if (half_max_processes == me) {
-            build_tree_parallel_mpi(points[0], 0, end, me, half_max_processes, new_group, threads);
-        } else {
-            if (me > half_max_processes) { 
-                master = half_max_processes;
-                group = new_group;
-            }
-            wait_mpi(points[0], 0, end, master, me, half_max_processes, group, threads);
-        }
+    int first_half[processes / 2];
+    int second_half[processes / 2];
+    int new_size = processes / 2;
+    for (int i = 0; i < new_size; i++) {
+        first_half[i] = ranks[i];
+        second_half[i + new_size] = ranks[i + new_size];
     }
+
+    create_group_communicators(world_group, new_size, first_half, communicator_index + 1);
+    create_group_communicators(world_group, new_size, second_half, communicator_index + new_size);
 }
 
 int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
@@ -1291,6 +1278,23 @@ int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &me);
+    initial_procs = nprocs;
+
+    MPI_Group world_group;
+    MPI_Comm_group(WORLD, &world_group);
+    //printf("Create world group\n");
+
+    // Getting max amount of communicators
+    int exponent = 1, n = nprocs;
+    while (n > 2) {
+        exponent *= 2;
+        amount_communicators += exponent;
+        n /= 2;
+    }
+
+    int ranks[nprocs];
+    for (int i = 0; i < nprocs; i++) ranks[i] = i;
+    create_group_communicators(world_group, nprocs, ranks, 0);
 
     start = (n_samples / nprocs) * me;
     end = start + (n_samples / nprocs);
@@ -1328,9 +1332,9 @@ int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
     }
     
     if (me != 0)
-        wait_mpi(first_point, 0, n_samples, me, nprocs, max_threads);
+        wait_mpi(first_point, 0, n_samples, me, nprocs, WORLD, 0, max_threads);
 
-    tree = build_tree_parallel_mpi(first_point, 0, n_samples, 0, nprocs, max_threads);
+    tree = build_tree_parallel_mpi(first_point, 0, n_samples, 0, nprocs, WORLD, 0, max_threads);
     
     // Receive confirmation
     int confirmation;
