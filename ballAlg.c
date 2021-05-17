@@ -208,7 +208,6 @@ long aux_print_tree(node_t *tree, int n_dims, double **points,
     long my_id, left_id = -1, right_id = -1;
 
     my_id = count;
-    count++;
     if (tree->L) {
         left_id = count + 1;
         count = aux_print_tree(tree->L, n_dims, points, n_count, left_id);
@@ -224,7 +223,7 @@ long aux_print_tree(node_t *tree, int n_dims, double **points,
     }
     printf("\n");
 
-    return count + 1;
+    return count;
 }
 
 void print_tree(node_t *tree, int n_dims, double **points) {
