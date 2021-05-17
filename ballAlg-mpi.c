@@ -852,27 +852,29 @@ void wait_mpi(int me, int start, int end, int threads) {
             fprintf(stderr, "*****Process %d adding rank %d\n", me, i);
         }
 
-        printf("Process %d creating group\n ", me );
         MPI_Group world_group;
         MPI_Comm_group(MPI_COMM_WORLD, &world_group);
 
+        fprintf(stderr, "Process %d creating group\n ", me );
         MPI_Group prime_group;
         MPI_Group_incl(world_group, group_size, ranks, &prime_group);
 
         // Create a new communicator based on the group
+        fprintf(stderr, "Process %d creating comm\n ", me );
         MPI_Comm prime_comm;
         MPI_Comm_create_group(MPI_COMM_WORLD, prime_group, 0, &prime_comm);
+        fprintf(stderr, "Process %d created comm\n ", me );
 
         //Receiving points
         //node_t *for_ortho_points = malloc(sizeof(node_t) * interval);
         long *for_indexes = malloc(sizeof(long) * interval);
         //MPI_Recv(for_indexes, interval, MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, MPI_STATUS_IGNORE);
 
-        //printf("------------------Process: %d, receiving points\n", me);
+        fprintf(stderr, "------------------Process: %d, receiving points\n", me);
         MPI_Scatter(for_indexes, interval, MPI_LONG, for_indexes, interval, MPI_LONG, 0, prime_comm);
         //printf("------------------Process: %d, received points\n", me);
 
-        //printf("\nSCATETING SLAVE\n");
+        fprintf(stderr, "\nSCATETING SLAVE\n");
         for(int i = 0; i < interval; i++){
             //for_ortho_points[i].center = malloc(sizeof(double) * n_dims);
             //for_ortho_points[i].point_id = for_indexes[i];
@@ -889,8 +891,8 @@ void wait_mpi(int me, int start, int end, int threads) {
         calc_projections_mpi(0, interval, threads, interval, 0, a, b, prime_comm);
         for_it++;
 	
-	MPI_Group_free(&prime_group);
-	MPI_Comm_free(&prime_comm);
+        MPI_Group_free(&prime_group);
+        MPI_Comm_free(&prime_comm);
 
     }
     
@@ -915,7 +917,7 @@ void wait_mpi(int me, int start, int end, int threads) {
 
     // Receive point indexes
     long *rec_index = malloc(sizeof(long) * args[0]);
-    //fprintf(stderr, "Node %d, is waiting for points\n", me);
+    fprintf(stderr, "Node %d, is waiting for points\n", me);
     MPI_Recv(rec_index, args[0], MPI_LONG, MPI_ANY_SOURCE, POINT_TAG, WORLD, MPI_STATUS_IGNORE);
 
     for(int i = 0; i < args[0]; i++){
@@ -926,14 +928,14 @@ void wait_mpi(int me, int start, int end, int threads) {
         //printf("------/-/-/-/-/-/-Process: %d, received pomt %ld\n", me, rec_index[i]);
     }
     
-    //fprintf(stderr, "Node %d received points\n", me);
+    fprintf(stderr, "Node %d received points\n", me);
     //ortho_points = new_ortho_points;
     node_t * tree = build_tree_parallel_mpi(0, args[0], me, args[1], max_threads);
 
     // Send end confirmation
     int confirmation[1] = {1};
     MPI_Send(confirmation, 1, MPI_INT, 0, CONFIRMATION_TAG, WORLD);
-    //printf("//////////////%d sent confirmation\n", me);
+    fprintf(stderr, "//////////////%d sent confirmation\n", me);
 
     if (max_size < 1000) {
         // Send node count
@@ -1056,7 +1058,7 @@ int main(int argc, char *argv[]) {
         int count[1];
         for (int i = 1; i < nprocs; i++){
             count[0] = 0;
-	    printf("MASTER WAITING CONFIRMATIONS\n");
+	        fprintf(stderr, "MASTER WAITING CONFIRMATIONS\n");
             MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, MPI_STATUS_IGNORE);
             node_count += count[0];
         }
