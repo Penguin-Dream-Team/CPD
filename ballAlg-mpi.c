@@ -842,7 +842,7 @@ void wait_mpi(int me, int start, int end, int threads) {
     else {
         printf("Process: %d, receiving second for with interval %ld\n", me, interval);
 
-        int group_size = nprocs / pow(2, for_it);
+        int group_size = nprocs / custom_power(2, for_it);
         int delta = res_process + group_size;
         fprintf(stderr, "Process %d with delta %d and group size %d\n", me, delta, group_size );
         int ranks[group_size];
@@ -976,6 +976,15 @@ void wait_mpi(int me, int start, int end, int threads) {
     //fprintf(stderr, "Process %d is ENDING\n", me);
     MPI_Finalize();
     exit(0);
+}
+
+int custom_power(int base, int exponent){
+    int result = 1;
+    for (int i = 0 ; i < exponent; i++) {
+        result = result * base;
+    }
+    printf("Custom power of base %d with exponent %d is %d\n", base, exponent, result);
+    return result;
 }
 
 int main(int argc, char *argv[]) {
