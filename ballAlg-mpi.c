@@ -829,23 +829,23 @@ void wait_mpi(int me, int start, int end, int threads) {
 
 
     if (for_it == 0){
-        //printf("Process %d received first for with interval %ld\n", me, interval);
+        printf("Process %d received first for with interval %ld\n", me, interval);
         calc_projections_mpi(interval * me, interval * me + interval, threads, interval, res_process, a, b, WORLD);
         for_it = 1;
     }
     else {
-        //printf("Process: %d, receiving second for with interval %ld\n", me, interval);
+        printf("Process: %d, receiving second for with interval %ld\n", me, interval);
 
         int group_size = nprocs / (for_it+1);
         int delta = res_process + group_size;
-        //printf("Process %d with delta %d and group size %d\n", me, delta, group_size );
+        printf("Process %d with delta %d and group size %d\n", me, delta, group_size );
         int ranks[group_size];
         for (int i = me, d = 0; i <= delta; i++, d++){
             ranks[d] = i-1;
-            //printf("*****Process %d adding rank %d\n", me, i-1);
+            printf("*****Process %d adding rank %d\n", me, i-1);
         }
 
-        //printf("Process %d creating group\n ", me );
+        printf("Process %d creating group\n ", me );
         MPI_Group world_group;
         MPI_Comm_group(MPI_COMM_WORLD, &world_group);
 
