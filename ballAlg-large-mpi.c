@@ -708,13 +708,14 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     }
     fprintf(stderr, "\n");
 
-    double **points_to_send = (double **) create_array_pts(n_dims, end);
+    double **points_to_send = (double **) create_array_pts(n_dims, end);  // remove 
     double **points_to_recv = (double **) create_array_pts(n_dims, end);
     for (int i = 0; i < end; i++) {
         memcpy(&(points_to_send[i]), &(points[ortho_points[i].point_id]), sizeof(double) * n_dims);
     }
     
     MPI_Barrier(WORLD);
+    // MPI_IN_PLACE
     MPI_Alltoallv(&(points_to_send[0][0]), send_counts, send_displs, MPI_DOUBLE, &(points_to_recv[0][0]), recv_counts, recv_displs, MPI_DOUBLE, WORLD);
 
     // Sorting points after exchange
@@ -739,6 +740,9 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
         fprintf(stderr, "\n");
     }
 
+    MPI_Finalize();
+    exit(0);
+    
     double *p1 = malloc(sizeof(double) * n_dims);
     double *p2 = malloc(sizeof(double) * n_dims);
     fprintf(stderr, "[PROCESS %d]: Receiving median points\n", me);
@@ -1147,6 +1151,9 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
         fprintf(stderr, "\n");
     }
 
+    MPI_Finalize();
+    exit(0);
+    
     double *p1 = malloc(sizeof(double) * n_dims);
     double *p2 = malloc(sizeof(double) * n_dims);
     fprintf(stderr, "I am process %d and i am sending my median values\n", me);
@@ -1175,6 +1182,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
      * Split processes in smaller groups or start serial version
      */
     points = points_to_recv;
+    node_t *tree;
     if (max_processes > 2) {
         int half_max_processes = max_processes / 2;
 
@@ -1185,7 +1193,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
         me = MPI_Comm_rank(communicator, &me);
 
         if (me == 0) {
-            build_tree_parallel_mpi(points[0], 0, end, me, half_max_processes, communicator, communicator_index++, threads);
+            tree = build_tree_parallel_mpi(points[0], 0, end, me, half_max_processes, communicator, communicator_index++, threads);
         } else {
             wait_mpi(points[0], 0, end, me, half_max_processes, communicator, communicator_index, threads);
         }
@@ -1215,7 +1223,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     }
     //fprintf(stderr, "I am process %d waiting for %d to contact me\n", me, node_sending);
     long node_id[2];
-    MPI_Recv(node_id, 2, MPI_LONG, node_sending, NODE_TAG, WORLD, &statuses[2]);
+    MPI_Recv(node_id, 2, MPI_LONG, node_sending, NODE_TAG, WORLD, MPI_STATUS_IGNORE);
     //fprintf(stderr, "I am process %d | received a message from process %d\n", me, node_sending);
 
     long print_result[1];
@@ -1230,7 +1238,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     //fprintf(stderr, "Process %d return print to proc %d\n", me, node_sending);
     MPI_Send(print_result, 1, MPI_LONG, node_sending, PRINT_TAG, WORLD);
 
-    free(new_ortho_points);
+    //free(new_ortho_points);
 
     //fprintf(stderr, "Process %d is ENDING\n", me);
     MPI_Finalize();
@@ -1293,6 +1301,7 @@ int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
     }
 
     int ranks[nprocs];
+    communicators = malloc(sizeof(MPI_Comm) * amount_communicators);
     for (int i = 0; i < nprocs; i++) ranks[i] = i;
     create_group_communicators(world_group, nprocs, ranks, 0);
 
