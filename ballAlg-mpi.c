@@ -7,6 +7,7 @@
 #include <string.h>
 #include <omp.h>
 #include <mpi.h>
+#include <math.h>
 
 #include "gen_points.h"
 #include "quickSelect.h"
@@ -442,7 +443,7 @@ node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {
 
 // not inclusive
 node_t *build_tree_parallel_mpi(long start, long end, int process, int max_processes, int threads) {  
-    //fprintf(stderr, "FUNCTION MPI Process: %d, Max_Process: %d, Threads: %d, Start: %ld, End: %ld\n", process, max_processes, threads, start, end);
+   // fprintf(stderr, "FUNCTION MPI Process: %d, Max_Process: %d, Threads: %d, Start: %ld, End: %ld\n", process, max_processes, threads, start, end);
 
     if (start == end - 1) {  // 1 point
         return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
@@ -472,6 +473,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     
 
     int nprocs = max_processes - process;
+    printf("New nprocs on process %d is %d\n", process, nprocs);
     long interval = (end - start) / nprocs;
 
     /*
@@ -495,7 +497,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     
     // No need to send points on the first round
     if (for_it == 0){
-        //printf("++++Processor %ld Starting first for\n", process);
+        printf("++++Processor %ld Starting first for\n", process);
         long first_for[] = {interval, process, a1, b1};
         for (int i = process + 1, d = 1; i < max_processes; i++, d++) {
             MPI_Send(first_for, 4, MPI_LONG, i, FOR_TAG, WORLD);
@@ -517,34 +519,35 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     // Second for onwards
     else {
         for_it++;
-        //printf("----Processor %ld Starting second for\n", process);
+        fprintf(stderr, "----Processor %ld Starting second for\n", process);
         long *points_indexes = malloc(sizeof(long) * (end - start) );
         long *fakes = malloc(sizeof(long) * interval );
 
         long for_args[] = {interval, process, a1, b1};
         for (int i = process + 1, d = 1; i < max_processes; i++, d++) {
             MPI_Send(for_args, 4, MPI_LONG, i, FOR_TAG, WORLD);
-            //printf("Processor %d Sent args to %d\n",process, i);
+            printf("Processor %d Sent args to %d\n",process, i);
             ranks[d] = i;
-            //printf("Adding rank %d\n", i);
+            fprintf(stderr, "Adding rank %d on process %d for iteration %d\n", i, process, for_it);
         }
             
         for (int j = start, k = 0; j < end; j++, k++){
             points_indexes[k] = ortho_points[j].point_id;
         }
 
-        //printf("Create world group\n");
+        fprintf(stderr, "Create world group on process %d for iteration %d\n", process, for_it);
         MPI_Group world_group;
         MPI_Comm_group(WORLD, &world_group);
 
-        //printf("Create prime group\n");
+        fprintf(stderr, "Create prime group on process %d for iteration %d\n", process, for_it);
         MPI_Group prime_group;
         MPI_Group_incl(world_group, group_size, ranks, &prime_group);
 
         // Create a new communicator based on the group
-        //printf("Create prime comm\n");
+        fprintf(stderr, "Create prime comm on process %d for iteration %d\n", process, for_it);
         MPI_Comm prime_comm;
         MPI_Comm_create_group(MPI_COMM_WORLD, prime_group, 0, &prime_comm);
+	fprintf(stderr, "Created comm\n");
 
         int root_rank;
         MPI_Comm_rank(prime_comm, &root_rank);
@@ -571,6 +574,9 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
         //printf("Gathering on root %d\n", process);
         MPI_Gather(response, interval, MPI_DOUBLE, recieved, interval, MPI_DOUBLE, 0, prime_comm);
+
+	MPI_Group_free(&prime_group);
+	MPI_Comm_free(&prime_comm);
     }
     
 
@@ -836,13 +842,14 @@ void wait_mpi(int me, int start, int end, int threads) {
     else {
         printf("Process: %d, receiving second for with interval %ld\n", me, interval);
 
-        int group_size = nprocs / (for_it+1);
+        int group_size = nprocs / pow(2, for_it);
         int delta = res_process + group_size;
-        printf("Process %d with delta %d and group size %d\n", me, delta, group_size );
+        fprintf(stderr, "Process %d with delta %d and group size %d\n", me, delta, group_size );
         int ranks[group_size];
-        for (int i = delta - group_size, d = 0; i < delta ; i++, d++){
+        for (int i = delta - group_size, d = 0; d < group_size ; i++, d++) {
+	    
             ranks[d] = i;
-            printf("*****Process %d adding rank %d\n", me, i);
+            fprintf(stderr, "*****Process %d adding rank %d\n", me, i);
         }
 
         printf("Process %d creating group\n ", me );
@@ -881,6 +888,9 @@ void wait_mpi(int me, int start, int end, int threads) {
         //printf("Process: %d, starting calculations\n", me);
         calc_projections_mpi(0, interval, threads, interval, 0, a, b, prime_comm);
         for_it++;
+	
+	MPI_Group_free(&prime_group);
+	MPI_Comm_free(&prime_comm);
 
     }
     
@@ -1000,7 +1010,7 @@ int main(int argc, char *argv[]) {
 
     if (nprocs / 2 * 3 > n_samples){
         if (me == 0) {
-            //printf("NO MPI \n");
+            printf("NO MPI \n");
 
             tree = build_tree_parallel_omp(0, n_samples, max_threads, me);
 
@@ -1037,6 +1047,7 @@ int main(int argc, char *argv[]) {
         int count[1];
         for (int i = 1; i < nprocs; i++){
             count[0] = 0;
+	    printf("MASTER WAITING CONFIRMATIONS\n");
             MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, MPI_STATUS_IGNORE);
             node_count += count[0];
         }
