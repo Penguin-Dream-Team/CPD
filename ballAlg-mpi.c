@@ -840,18 +840,10 @@ void wait_mpi(int me, int start, int end, int threads) {
         int delta = res_process + group_size;
         printf("Process %d with delta %d and group size %d\n", me, delta, group_size );
         int ranks[group_size];
-        if (me < delta){
-            for (int i = 1, d = 0; i <= delta / 2; i++, d++){
-                ranks[d] = i-1;
-                printf("*****Process %d adding rank %d\n", me, i-1);
-            }
-        } else {
-            for (int i = delta / 2 + 1, d = 0; i <= delta; i++, d++){
-                ranks[d] = i-1;
-                printf("*****Process %d adding rank %d\n", me, i-1);
-            }
+        for (int i = delta - group_size, d = 0; i < delta ; i++, d++){
+            ranks[d] = i;
+            printf("*****Process %d adding rank %d\n", me, i);
         }
-        
 
         printf("Process %d creating group\n ", me );
         MPI_Group world_group;
