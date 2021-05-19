@@ -735,6 +735,8 @@ void print_tree_mpi(node_t *tree, int n_dims, double **points, int prev_count, i
     count_nodes(tree, &n_count);
     n_count = n_count + prev_count;
     printf("%d %ld\n", n_dims, n_count);
+    fflush(stdout);
+    MPI_Barrier(WORLD);
 
     current_print_proc = me + 1;
     aux_print_tree_main_proc(tree, n_dims, points, n_count, 0, me);
@@ -854,30 +856,32 @@ void wait_mpi(int me, int start, int end, int threads) {
     int confirmation[1] = {1};
     MPI_Send(confirmation, 1, MPI_INT, 0, CONFIRMATION_TAG, WORLD);
 
-    if (max_size < 1000) {
-        // Send node count
-        long n_count = 0;
-        count_nodes(tree, &n_count);
-        long node_count[1] = {n_count};
-        MPI_Send(node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
+    MPI_Barrier(WORLD);
 
-        // Receive node id and print type 
-        long node_id[3];
-        MPI_Recv(node_id, 3, MPI_LONG, MPI_ANY_SOURCE, NODE_TAG, WORLD, MPI_STATUS_IGNORE);
+    // Send node count
+    long n_count = 0;
+    count_nodes(tree, &n_count);
+    long node_count[1] = {n_count};
+    MPI_Send(node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
 
-        long print_result[1];
-        if (node_id[1]) {
-            current_print_proc = me + 1;
-            print_result[0] = aux_print_tree_main_proc(tree, n_dims, points, n_count, node_id[0], me);
-        } else {  
-            print_result[0] = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
-        }
+    MPI_Barrier(WORLD);
 
-        MPI_Send(print_result, 1, MPI_LONG, node_id[2], PRINT_TAG, WORLD);
+    // Receive node id and print type 
+    long node_id[3];
+    MPI_Recv(node_id, 3, MPI_LONG, MPI_ANY_SOURCE, NODE_TAG, WORLD, MPI_STATUS_IGNORE);
 
-        if (node_id[1]) {
-            MPI_Send(&current_print_proc, 1, MPI_INT, node_id[2], PRINT_2_TAG, WORLD);
-        }
+    long print_result[1];
+    if (node_id[1]) {
+        current_print_proc = me + 1;
+        print_result[0] = aux_print_tree_main_proc(tree, n_dims, points, n_count, node_id[0], me);
+    } else {  
+        print_result[0] = aux_print_tree(tree, n_dims, points, n_count, node_id[0]);
+    }
+
+    MPI_Send(print_result, 1, MPI_LONG, node_id[2], PRINT_TAG, WORLD);
+
+    if (node_id[1]) {
+        MPI_Send(&current_print_proc, 1, MPI_INT, node_id[2], PRINT_2_TAG, WORLD);
     }
 
 
@@ -946,19 +950,19 @@ int main(int argc, char *argv[]) {
 
     exec_time += omp_get_wtime();
     fprintf(stderr, "%lf\n", exec_time);
+    fflush(stderr);
+    MPI_Barrier(WORLD);
 
-    if (n_samples < 1000) {
-        // Receive node count
-        int node_count = 0;
-        int count[1];
-        for (int i = 1; i < nprocs; i++){
-            count[0] = 0;
-            MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, MPI_STATUS_IGNORE);
-            node_count += count[0];
-        }
-
-        print_tree_mpi(tree, n_dims, points, node_count, me);
+    // Receive node count
+    int node_count = 0;
+    int count[1];
+    for (int i = 1; i < nprocs; i++){
+        count[0] = 0;
+        MPI_Recv(count, 1, MPI_LONG, MPI_ANY_SOURCE, COUNT_TAG, WORLD, MPI_STATUS_IGNORE);
+        node_count += count[0];
     }
+
+    print_tree_mpi(tree, n_dims, points, node_count, me);
 
     free(ortho_points);
     free_node(tree);
