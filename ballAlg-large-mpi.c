@@ -844,7 +844,7 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
         for (int i = 0; i < requestPoints[1]; i++) {
             points_for_next_process[i] = malloc(sizeof(double) * n_dims);
             for (int j = 0; j < n_dims; j++) { 
-                points_for_next_process[i][j] = points_received[ortho_points_to_recv[end - requestPoints[1] + i]].point_id][j];
+                points_for_next_process[i][j] = points_received[ortho_points_to_recv[end - requestPoints[1] + i].point_id][j];
             }
             MPI_Send(points_for_next_process[i], n_dims, MPI_DOUBLE, me + 1, REQUEST_POINTS_TAG, communicator);  
         }
@@ -1101,6 +1101,8 @@ static void print_tree_mpi(node_t *tree, int n_dims, double **points, int prev_c
     count_nodes(tree, &n_count);
     n_count = n_count + prev_count;
     printf("%d %ld\n", n_dims, n_count);
+    fflush(stdout);
+    MPI_Barrier(WORLD);
 
     current_print_proc = 1;
     fprintf(stderr, "starting aux print - process %d with count = %ld\n", me, n_count);
@@ -1384,19 +1386,47 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
             // Merge all to points
             fprintf(stderr, "I AM PROCESS %d and I am merging my points\n", me);
             if (requestPoints[0] == 1) {
+                for (int i = requestPoints[1]; i < recv_count; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i - requestPoints[1]][j] = points_received[ortho_points_to_recv[i].point_id][j];
+                    }
+                }
+
+                for (int i = request_size_with_previous_process; i < end; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i][j] = points_from_next_process[i - request_size_with_previous_process][j];
+                    }
+                }
 
             } else if (requestPoints[0] == 2) {
-
-            } else {
-                for (int i = 0; i < recv_count; i++) {
+                for (int i = 0; i < requestPoints[1]; i++) {
                     for (int j = 0; j < n_dims; j++) {
                         points[i][j] = points_from_previous_process[i][j];
                     }
                 }
 
+                for (int i = 0; i < recv_count; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i + requestPoints[1]][j] = points_received[ortho_points_to_recv[i].point_id][j];
+                    }
+                }
+
+                for (int i = 0; i < requestPointsNextProcesses[1]; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i + recv_count][j] = points_from_next_process[i][j];
+                    }
+                }
+
+            } else {
+                for (int i = 0; i < recv_count; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i][j] = points_received[ortho_points_to_recv[i].point_id][j];
+                    }
+                }
+
                 for (int i = recv_count; i < end; i++) {
                     for (int j = 0; j < n_dims; j++) {
-                        points[i][j] = points_received[i][j];
+                        points[i][j] = points_from_next_process[i][j];
                     }
                 }
             }
@@ -1419,19 +1449,29 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
             // Merge all to points
             fprintf(stderr, "I AM PROCESS %d and I am merging my points\n", me);
             if (requestPoints[0] == 1) {
+                for (int i = requestPoints[1]; i < end + requestPoints[1]; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i - requestPoints[1]][j] = points_received[ortho_points_to_recv[i].point_id][j];
+                    }
+                }
 
             } else if (requestPoints[0] == 2) {
-
-            } else {
-                for (int i = 0; i < recv_count; i++) {
+                for (int i = 0; i < requestPoints[1]; i++) {
                     for (int j = 0; j < n_dims; j++) {
                         points[i][j] = points_from_previous_process[i][j];
                     }
                 }
 
-                for (int i = recv_count; i < end; i++) {
+                for (int i = requestPoints[1]; i < end; i++) {
                     for (int j = 0; j < n_dims; j++) {
-                        points[i][j] = points_received[i][j];
+                        points[i][j] = points_received[ortho_points_to_recv[i - requestPoints[1]].point_id][j];
+                    }
+                }
+
+            } else {
+                for (int i = 0; i < end; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i][j] = points_received[ortho_points_to_recv[i].point_id][j];
                     }
                 }
             }
@@ -1544,11 +1584,15 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     MPI_Send(&confirmation, 1, MPI_INT, 0, CONFIRMATION_TAG, WORLD);
     fprintf(stderr, "//////////////%d sent confirmation\n", me);
 
+    MPI_Barrier(WORLD);
+
     // Send node count
     long n_count = 0;
     count_nodes(tree, &n_count);
     fprintf(stderr, "Process %d sending node count\n", me);
     MPI_Send(&n_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
+
+    MPI_Barrier(WORLD);
 
     // Receive node id and print type 
     long node_id[3];
@@ -1645,6 +1689,8 @@ int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
 
     exec_time += omp_get_wtime();
     fprintf(stderr, "%lf\n", exec_time);
+    fflush(stderr);
+    MPI_Barrier(WORLD);
 
     // Receive node count
     int node_count = 0;
