@@ -753,7 +753,7 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     fprintf(stderr, "\n");
 
     double *points_to_send = malloc(sizeof(double)* end);
-    double *points_to_recv = malloc(sizeof(double)* end);
+    double *points_to_recv = malloc(sizeof(double)* recv_count);
     double **points_received = malloc(sizeof(double)* recv_count);
     for (int i = 0; i < recv_count; i++) {
         points_received[i] = malloc(sizeof(double) * n_dims);
@@ -768,7 +768,7 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
         MPI_Alltoallv(&(points_to_send[0]), send_counts, send_displs, MPI_DOUBLE, &(points_to_recv[0]), recv_counts, recv_displs, MPI_DOUBLE, communicator);
         MPI_Barrier(communicator);
 
-        for (int j = 0; j < end; j++) {
+        for (int j = 0; j < recv_count; j++) {
             memcpy(&(points_received[j][i]), &(points_to_recv[j]), sizeof(double));
         }
     }
@@ -781,18 +781,20 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     MPI_Alltoallv(&(points_to_send[0]), send_counts, send_displs, MPI_DOUBLE, &(points_to_recv[0]), recv_counts, recv_displs, MPI_DOUBLE, communicator);
     MPI_Barrier(communicator);
 
+    node_t *ortho_points_to_recv = malloc(sizeof(node_t)* recv_count);
     for (int i = 0; i < end; i++) {
-        memcpy(&(ortho_points[i].center[0]), &(points_to_recv[i]), sizeof(double));
-        ortho_points[i].point_id = i;
+        ortho_points_to_recv[i].center = malloc(sizeof(double) * n_dims);
+        memcpy(&(ortho_points_to_recv[i].center[0]), &(points_to_recv[i]), sizeof(double));
+        ortho_points_to_recv[i].point_id = i;
     }
 
     // Sorting points after exchange
-    qsort(ortho_points, end, sizeof(node_t), cmpfunc_ortho);
+    qsort(ortho_points_to_recv, end, sizeof(node_t), cmpfunc_ortho);
 
     //free(points_to_send[0]);
     //free(points_to_send);
 
-    for (int i = 0; i < end; i++) {
+    for (int i = 0; i < recv_count; i++) {
         fprintf(stderr, "[PROCESS %d]: points received after Alltoall: ", me);
         for (int j = 0; j < n_dims; j++) {
             fprintf(stderr, " %f", points_received[i][j]);
@@ -802,10 +804,9 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
 
     fprintf(stderr, "[PROCESS %d]: ortho points after Alltoall: ", me);
     for (int i = 0; i < end; i++) {
-        fprintf(stderr, " %f", ortho_points[i].center[0]);
+        fprintf(stderr, " %f", ortho_points_to_recv[i].center[0]);
     }
     fprintf(stderr, "\n");
-    // TODO OS VALORES DE SEND DEVIAM IR BUSCAR O ORTHO POINTS POINT ID E NÃO O ID MESMO
 
     // Equally divide the ammount of points to all processes
     int requestPoints[2] = { 0, 0 };
@@ -842,8 +843,8 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
         double **points_for_next_process = malloc(sizeof(double) * requestPoints[1]);
         for (int i = 0; i < requestPoints[1]; i++) {
             points_for_next_process[i] = malloc(sizeof(double) * n_dims);
-            for (int j = 0; j < n_dims; j++) {
-                points_for_next_process[i][j] = points_received[end - requestPoints[1] + i][j];
+            for (int j = 0; j < n_dims; j++) { 
+                points_for_next_process[i][j] = points_received[ortho_points_to_recv[end - requestPoints[1] + i]].point_id][j];
             }
             MPI_Send(points_for_next_process[i], n_dims, MPI_DOUBLE, me + 1, REQUEST_POINTS_TAG, communicator);  
         }
@@ -873,6 +874,13 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     // Sorting and exchange finished
     fprintf(stderr, "I AM PROCESS %d and I finished my merge\n", me);
 
+    for (int i = 0; i < end; i++) {
+        ortho_points[i].point_id = i;
+    }
+    free(points_to_send);
+    free(points_to_recv);
+    free(ortho_points_to_recv);
+    
     double *p1 = malloc(sizeof(double) * n_dims);
     double *p2 = malloc(sizeof(double) * n_dims);
     fprintf(stderr, "[PROCESS %d]: Receiving median points\n", me);
@@ -1277,7 +1285,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     fprintf(stderr, "\n");
 
     double *points_to_send = malloc(sizeof(double) * end);
-    double *points_to_recv = malloc(sizeof(double) * end);
+    double *points_to_recv = malloc(sizeof(double) * recv_count);
     double **points_received = malloc(sizeof(double) * recv_count);
     for (int i = 0; i < recv_count; i++) {
         points_received[i] = malloc(sizeof(double) * n_dims);
@@ -1292,7 +1300,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
         MPI_Alltoallv(&(points_to_send[0]), send_counts, send_displs, MPI_DOUBLE, &(points_to_recv[0]), recv_counts, recv_displs, MPI_DOUBLE, communicator);
         MPI_Barrier(communicator);
 
-        for (int j = 0; j < end; j++) {
+        for (int j = 0; j < recv_count; j++) {
             memcpy(&(points_received[j][i]), &(points_to_recv[j]), sizeof(double));
         }
     }
@@ -1305,28 +1313,30 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     MPI_Alltoallv(&(points_to_send[0]), send_counts, send_displs, MPI_DOUBLE, &(points_to_recv[0]), recv_counts, recv_displs, MPI_DOUBLE, communicator);
     MPI_Barrier(communicator);
 
+    node_t *ortho_points_to_recv = malloc(sizeof(node_t)* recv_count);
     for (int i = 0; i < end; i++) {
-        memcpy(&(ortho_points[i].center[0]), &(points_to_recv[i]), sizeof(double));
-        ortho_points[i].point_id = i;
+        ortho_points_to_recv[i].center = malloc(sizeof(double) * n_dims);
+        memcpy(&(ortho_points_to_recv[i].center[0]), &(points_to_recv[i]), sizeof(double));
+        ortho_points_to_recv[i].point_id = i;
     }
 
     // Sorting points after exchange
-    qsort(ortho_points, end, sizeof(node_t), cmpfunc_ortho);
+    qsort(ortho_points_to_recv, end, sizeof(node_t), cmpfunc_ortho);
 
     //free(points_to_send[0]);
     //free(points_to_send);
 
-    for (int i = 0; i < end; i++) {
+    for (int i = 0; i < recv_count; i++) {
         fprintf(stderr, "[PROCESS %d]: points after Alltoall: ", me);
         for (int j = 0; j < n_dims; j++) {
-            fprintf(stderr, " %f", points[i][j]);
+            fprintf(stderr, " %f", points_received[i][j]);
         }
         fprintf(stderr, "\n");
     }
 
     fprintf(stderr, "[PROCESS %d]: ortho points after Alltoall: ", me);
     for (int i = 0; i < end; i++) {
-        fprintf(stderr, " %f", ortho_points[i].center[0]);
+        fprintf(stderr, " %f", ortho_points_to_recv[i].center[0]);
     }
     fprintf(stderr, "\n");
     
@@ -1339,7 +1349,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
         double *points_for_previous_process = malloc(sizeof(double) * n_dims);
         for (int i = 0; i < requestPoints[1]; i++) {
             for (int j = 0; j < n_dims; j++) {
-                points_for_previous_process[j] = points_received[i][j];
+                points_for_previous_process[j] = points_received[ortho_points_to_recv[i].point_id][j];
             }
             MPI_Send(points_for_previous_process, n_dims, MPI_DOUBLE, me - 1, REQUEST_POINTS_TAG, communicator);
         }           
@@ -1401,7 +1411,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
             for (int i = 0; i < requestPointsNextProcesses[1]; i++) {
                 points_for_next_process[i] = malloc(sizeof(double) * n_dims);
                 for (int j = 0; j < n_dims; j++) {
-                    points_for_next_process[i][j] = points_received[end - requestPointsNextProcesses[1] + i][j];
+                    points_for_next_process[i][j] = points_received[ortho_points_to_recv[end - requestPointsNextProcesses[1] + i].point_id][j];
                 }
                 MPI_Send(points_for_next_process[i], n_dims, MPI_DOUBLE, me + 1, REQUEST_POINTS_TAG, communicator);  
             } 
@@ -1463,6 +1473,13 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
 
     // Sorting and exchange finished
     fprintf(stderr, "I AM PROCESS %d and I finished my merge\n", me);
+
+    for (int i = 0; i < end; i++) {
+        ortho_points[i].point_id = i;
+    }
+    free(points_to_send);
+    free(points_to_recv);
+    free(ortho_points_to_recv);
 
     double *p1 = malloc(sizeof(double) * n_dims);
     double *p2 = malloc(sizeof(double) * n_dims);
