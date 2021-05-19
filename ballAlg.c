@@ -87,6 +87,18 @@ void calc_ortho_projection(double *point_a, double *point_b, double *p1, double 
     double top_inner_product2 = 0;
     double bot_inner_product = 0;
 
+    fprintf(stderr, "point a inside calc =");
+    for (int i = 0; i < n_dims; i++) {
+        fprintf(stderr, " %f", point_a[i]);
+    }
+    fprintf(stderr, "\n");
+
+    fprintf(stderr, "point b inside calc =");
+    for (int i = 0; i < n_dims; i++) {
+        fprintf(stderr, " %f", point_b[i]);
+    }
+    fprintf(stderr, "\n");
+
     for (int i = 0; i < n_dims; i++) {
         double b_minus_a = point_b[i] - point_a[i];
         top_inner_product1 += (p1[i] - point_a[i]) * b_minus_a;
@@ -101,10 +113,30 @@ void calc_ortho_projection(double *point_a, double *point_b, double *p1, double 
         ortho_points[p1_index].center[i] = inner_product1 * (point_b[i] - point_a[i]) + point_a[i];
         ortho_points[p2_index].center[i] = inner_product2 * (point_b[i] - point_a[i]) + point_a[i];
     }
+
+    fprintf(stderr, "median 1 inside calc =");
+    for (int i = 0; i < n_dims; i++) {
+        fprintf(stderr, " %f", ortho_points[p1_index].center[i]);
+    }
+    fprintf(stderr, "\n");
+
+    fprintf(stderr, "median 2 inside calc =");
+    for (int i = 0; i < n_dims; i++) {
+        fprintf(stderr, " %f", ortho_points[p2_index].center[i]);
+    }
+    fprintf(stderr, "\n");
 }
 
 // not inclusive
 node_t *build_tree(long start, long end) {  
+    fprintf(stderr, "BUILD TREE BEGIN\n");
+    for (int i = start; i < end; i++) {
+        fprintf(stderr, "POINTS %d is", i);
+        for (int j = 0; j < n_dims; j++) {
+            fprintf(stderr, " %f", points[ortho_points[i].point_id][j]);
+        }
+        fprintf(stderr, "\n");
+    }
     if (start == end - 1) {  // 1 point
         return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
 
@@ -240,7 +272,6 @@ long aux_print_tree(node_t *tree, int n_dims, double **points,
     long my_id, left_id = -1, right_id = -1;
 
     my_id = count;
-    count++;
     if (tree->L) {
         left_id = count + 1;
         count = aux_print_tree(tree->L, n_dims, points, n_count, left_id);
@@ -256,7 +287,7 @@ long aux_print_tree(node_t *tree, int n_dims, double **points,
     }
     printf("\n");
 
-    return count + 1;
+    return count;
 }
 
 void print_tree(node_t *tree, int n_dims, double **points) {

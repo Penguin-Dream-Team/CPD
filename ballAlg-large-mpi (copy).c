@@ -21,16 +21,17 @@
 #define POINT_B_TAG           104
 #define PROCESS_TYPE_TAG      105
 #define REGULAR_SAMPLES_TAG   106
-#define PIVOTS_TAG            107
-#define MEDIAN_POINT_TAG      108
-#define FURTHEST_DISTANCE_TAG 109
-#define CONFIRMATION_TAG      110
-#define COUNT_TAG             111
-#define NODE_TAG              112
-#define PRINT_TAG             113
-#define PRINT_2_TAG           114
-#define FOR_TAG               115
-#define FOR_RESPONSE_TAG      116
+#define REQUEST_POINTS_TAG    107
+#define PIVOTS_TAG            108
+#define MEDIAN_POINT_TAG      109
+#define FURTHEST_DISTANCE_TAG 110
+#define CONFIRMATION_TAG      111
+#define COUNT_TAG             112
+#define NODE_TAG              113
+#define PRINT_TAG             114
+#define PRINT_2_TAG           115
+#define FOR_TAG               116
+#define FOR_RESPONSE_TAG      117
 
 typedef struct {
     int process;
@@ -707,7 +708,7 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
         }
         send_counts[pi]++; 
     }
-    
+
     int send_displs[max_processes];
     int recv_counts[max_processes];
     int recv_displs[max_processes];
@@ -715,6 +716,11 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     MPI_Barrier(communicator);
     MPI_Alltoall(send_counts, 1, MPI_INT, recv_counts, 1, MPI_INT, communicator);
     
+    int recv_count = 0;
+    for (int i = 0; i < max_processes; i++) {
+        recv_count += recv_counts[i];
+    }
+
     fprintf(stderr, "PROCESS %d SEND COUNTS", me);
     for (int i = 0; i < max_processes; i++) {
         fprintf(stderr, " %d", send_counts[i]);
@@ -748,6 +754,11 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
 
     double *points_to_send = malloc(sizeof(double)* end);
     double *points_to_recv = malloc(sizeof(double)* end);
+    double **points_received = malloc(sizeof(double)* recv_count);
+    for (int i = 0; i < end; i++) {
+        points_received[i] = malloc(sizeof(double) * n_dims);
+    }
+    
     for (int i = 0; i < n_dims; i++) {
         for (int j = 0; j < end; j++) {
             memcpy(&(points_to_send[j]), &(points[ortho_points[j].point_id][i]), sizeof(double));
@@ -758,7 +769,7 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
         MPI_Barrier(communicator);
 
         for (int j = 0; j < end; j++) {
-            memcpy(&(points[j][i]), &(points_to_recv[j]), sizeof(double));
+            memcpy(&(points_received[j][i]), &(points_to_recv[j]), sizeof(double));
         }
     }
 
@@ -782,9 +793,9 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
     //free(points_to_send);
 
     for (int i = 0; i < end; i++) {
-        fprintf(stderr, "[PROCESS %d]: points after Alltoall: ", me);
+        fprintf(stderr, "[PROCESS %d]: points received after Alltoall: ", me);
         for (int j = 0; j < n_dims; j++) {
-            fprintf(stderr, " %f", points[i][j]);
+            fprintf(stderr, " %f", points_received[i][j]);
         }
         fprintf(stderr, "\n");
     }
@@ -794,7 +805,66 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
         fprintf(stderr, " %f", ortho_points[i].center[0]);
     }
     fprintf(stderr, "\n");
-    
+    // TODO OS VALORES DE SEND DEVIAM IR BUSCAR O ORTHO POINTS POINT ID E NÃO O ID MESMO
+
+    // Equally divide the ammount of points to all processes
+    int requestPoints[2] = { 0, 0 };
+    if (recv_count < end) {
+        int request_size = end - recv_count;
+        fprintf(stderr, "I AM PROCESS %d and I need %d points from %d\n", me, request_size, me + 1);
+        requestPoints[0] = 1;
+        requestPoints[1] = request_size;
+
+        MPI_Send(requestPoints, 2, MPI_INT, me + 1, REQUEST_POINTS_TAG, communicator);
+        double *points_from_next_process = malloc(sizeof(double) * n_dims);
+        for (int i = 0; i < request_size; i++) {
+            MPI_Recv(&points_from_next_process[0], n_dims, MPI_DOUBLE, me + 1, REQUEST_POINTS_TAG, communicator, MPI_STATUS_IGNORE);
+            for (int j = 0; j < n_dims; j++) {
+                points[i + recv_count][j] = points_from_next_process[j];
+            }
+        }
+
+        // Merge all to points
+        fprintf(stderr, "I AM PROCESS %d and I am merging my points\n", me);
+        for (int i = 0; i < recv_count; i++) {
+            for (int j = 0; j < n_dims; j++) {
+                points[i][j] = points_received[i][j];
+            }
+        }
+
+    } else if (recv_count > end) {
+        int request_size = end - recv_count;
+        fprintf(stderr, "I AM PROCESS %d and I am sending %d points to %d\n", me, request_size, me + 1);
+        requestPoints[0] = 2;
+        requestPoints[0] = request_size;
+        MPI_Send(requestPoints, 2, MPI_INT, me + 1, REQUEST_POINTS_TAG, communicator);
+
+        double **points_for_next_process = malloc(sizeof(double) * requestPoints[1]);
+        for (int i = 0; i < requestPoints[1]; i++) {
+            points_for_next_process[i] = malloc(sizeof(double) * n_dims);
+            for (int j = 0; j < n_dims; j++) {
+                points_for_next_process[i][j] = points_received[end - requestPoints[1] + i][j];
+            }
+            MPI_Send(points_for_next_process[i], n_dims, MPI_DOUBLE, me + 1, REQUEST_POINTS_TAG, communicator);  
+        }
+
+        // Merge all to points
+        fprintf(stderr, "I AM PROCESS %d and I am merging my points\n", me);
+        for (int i = 0; i < end; i++) {
+            for (int j = 0; j < n_dims; j++) {
+                points[i][j] = points_received[i][j];
+            }
+        }
+
+    } else {
+        requestPoints[0] = 3;
+        requestPoints[0] = 0;
+        MPI_Send(requestPoints, 2, MPI_INT, me + 1, REQUEST_POINTS_TAG, communicator);
+    }
+
+    // Sorting and exchange finished
+    fprintf(stderr, "I AM PROCESS %d and I finished my merge\n", me);
+
     double *p1 = malloc(sizeof(double) * n_dims);
     double *p2 = malloc(sizeof(double) * n_dims);
     fprintf(stderr, "[PROCESS %d]: Receiving median points\n", me);
@@ -806,7 +876,7 @@ static node_t *build_tree_parallel_mpi(double *first_point, long start, long end
             for (int i = 0; i < n_dims; i++) {
                 p1[i] = points[end - 1][i];
             }
-            MPI_Recv(p2, n_dims, MPI_DOUBLE, me + 1          , MEDIAN_POINT_TAG, communicator, MPI_STATUS_IGNORE);
+            MPI_Recv(p2, n_dims, MPI_DOUBLE, me + 1, MEDIAN_POINT_TAG, communicator, MPI_STATUS_IGNORE);
         }
     } else {
         // 1 process
@@ -1162,6 +1232,11 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     MPI_Barrier(communicator);
     MPI_Alltoall(send_counts, 1, MPI_INT, recv_counts, 1, MPI_INT, communicator);
 
+    int recv_count = 0;
+    for (int i = 0; i < max_processes; i++) {
+        recv_count += recv_counts[i];
+    }
+
     fprintf(stderr, "PROCESS %d SEND COUNTS", me);
     for (int i = 0; i < max_processes; i++) {
         fprintf(stderr, " %d", send_counts[i]);
@@ -1193,8 +1268,13 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     }
     fprintf(stderr, "\n");
 
-    double *points_to_send = malloc(sizeof(double)* end);
-    double *points_to_recv = malloc(sizeof(double)* end);
+    double *points_to_send = malloc(sizeof(double) * end);
+    double *points_to_recv = malloc(sizeof(double) * end);
+    double **points_received = malloc(sizeof(double) * recv_count);
+    for (int i = 0; i < end; i++) {
+        points_received[i] = malloc(sizeof(double) * n_dims);
+    }
+
     for (int i = 0; i < n_dims; i++) {
         for (int j = 0; j < end; j++) {
             memcpy(&(points_to_send[j]), &(points[ortho_points[j].point_id][i]), sizeof(double));
@@ -1205,7 +1285,7 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
         MPI_Barrier(communicator);
 
         for (int j = 0; j < end; j++) {
-            memcpy(&(points[j][i]), &(points_to_recv[j]), sizeof(double));
+            memcpy(&(points_received[j][i]), &(points_to_recv[j]), sizeof(double));
         }
     }
 
@@ -1242,6 +1322,134 @@ static void wait_mpi(double *first_point, long start, long end, int me, int max_
     }
     fprintf(stderr, "\n");
     
+    // Equally divide the ammount of points to all processes
+    int requestPoints[2] = { 0, 0 };
+    double **points_from_previous_process;
+    MPI_Recv(&requestPoints, 2, MPI_INT, me - 1, REQUEST_POINTS_TAG, communicator, MPI_STATUS_IGNORE);
+    if (requestPoints[0] == 1) {
+        fprintf(stderr, "I AM PROCESS %d and process %d is asking me %d points\n", me, me - 1, requestPoints[1]);
+        double *points_for_previous_process = malloc(sizeof(double) * n_dims);
+        for (int i = 0; i < requestPoints[1]; i++) {
+            for (int j = 0; j < n_dims; j++) {
+                points_for_previous_process[j] = points_received[i][j];
+            }
+            MPI_Send(points_for_previous_process, n_dims, MPI_DOUBLE, me - 1, REQUEST_POINTS_TAG, communicator);
+        }           
+
+    } else if (requestPoints[0] == 2) {
+        fprintf(stderr, "I AM PROCESS %d and process %d is sending me %d points\n", me, me - 1, requestPoints[1]);
+        points_from_previous_process = malloc(sizeof(double) * requestPoints[1]);
+        for (int i = 0; i < requestPoints[1]; i++) {
+            points_from_previous_process[i] = malloc(sizeof(double) * n_dims);
+            MPI_Recv(&(points_from_previous_process[i]), n_dims, MPI_DOUBLE, me - 1, REQUEST_POINTS_TAG, communicator, MPI_STATUS_IGNORE);
+        }
+    }
+
+    if (me != max_processes - 1) {
+        int requestPointsNextProcesses[2] = { 0, 0 };
+        int request_size_with_previous_process = 0;
+        if (requestPoints[0] == 1)      request_size_with_previous_process = recv_count - requestPoints[1];
+        else if (requestPoints[0] == 2) request_size_with_previous_process = recv_count + requestPoints[1];
+
+        if (request_size_with_previous_process < end) {
+            int request_size = end - request_size_with_previous_process;
+            requestPointsNextProcesses[0] = 1;
+            requestPointsNextProcesses[1] = request_size;
+
+            MPI_Send(requestPointsNextProcesses, 2, MPI_INT, me + 1, REQUEST_POINTS_TAG, communicator);
+            double **points_from_next_process = malloc(sizeof(double) * request_size);
+            for (int i = 0; i < request_size; i++) {
+                points_from_next_process[i] = malloc(sizeof(double) * n_dims);
+                MPI_Recv(&(points_from_next_process[i]), n_dims, MPI_DOUBLE, me + 1, REQUEST_POINTS_TAG, communicator, MPI_STATUS_IGNORE);
+            }
+
+            // Merge all to points
+            fprintf(stderr, "I AM PROCESS %d and I am merging my points\n", me);
+            if (requestPoints[0] == 1) {
+
+            } else if (requestPoints[0] == 2) {
+
+            } else {
+                for (int i = 0; i < recv_count; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i][j] = points_from_previous_process[i][j];
+                    }
+                }
+
+                for (int i = recv_count; i < end; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i][j] = points_received[i][j];
+                    }
+                }
+            }
+
+        } else if (request_size_with_previous_process > end) {
+            int request_size = end - request_size_with_previous_process;
+            requestPointsNextProcesses[0] = 2;
+            requestPointsNextProcesses[0] = request_size;
+            MPI_Send(requestPointsNextProcesses, 2, MPI_INT, me + 1, REQUEST_POINTS_TAG, communicator);
+
+            double **points_for_next_process = malloc(sizeof(double) * requestPointsNextProcesses[1]);
+            for (int i = 0; i < requestPointsNextProcesses[1]; i++) {
+                points_for_next_process[i] = malloc(sizeof(double) * n_dims);
+                for (int j = 0; j < n_dims; j++) {
+                    points_for_next_process[i][j] = points_received[end - requestPointsNextProcesses[1] + i][j];
+                }
+                MPI_Send(points_for_next_process[i], n_dims, MPI_DOUBLE, me + 1, REQUEST_POINTS_TAG, communicator);  
+            } 
+        
+            // Merge all to points
+            fprintf(stderr, "I AM PROCESS %d and I am merging my points\n", me);
+            if (requestPoints[0] == 1) {
+
+            } else if (requestPoints[0] == 2) {
+
+            } else {
+                for (int i = 0; i < recv_count; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i][j] = points_from_previous_process[i][j];
+                    }
+                }
+
+                for (int i = recv_count; i < end; i++) {
+                    for (int j = 0; j < n_dims; j++) {
+                        points[i][j] = points_received[i][j];
+                    }
+                }
+            }
+
+        } else {
+            requestPointsNextProcesses[0] = 3;
+            requestPointsNextProcesses[0] = 0;
+            MPI_Send(requestPointsNextProcesses, 2, MPI_INT, me + 1, REQUEST_POINTS_TAG, communicator);
+        }
+    } else {
+        // Merge all to points
+        fprintf(stderr, "I AM PROCESS %d and I am merging my points\n", me);
+        if (requestPoints[0] == 1) {
+            for (int i = 0; i < end; i++) {
+                for (int j = 0; j < n_dims; j++) {
+                    points[i][j] = points_received[i + requestPoints[1]][j];
+                }
+            }
+        } else if (requestPoints[0] == 2) {
+            for (int i = 0; i < requestPoints[1]; i++) {
+                for (int j = 0; j < n_dims; j++) {
+                    points[i][j] = points_from_previous_process[i][j];
+                }
+            }
+
+            for (int i = requestPoints[1]; i < end; i++) {
+                for (int j = 0; j < n_dims; j++) {
+                    points[i][j] = points_received[i][j];
+                }
+            }
+        }
+    }
+
+    // Sorting and exchange finished
+    fprintf(stderr, "I AM PROCESS %d and I finished my merge\n", me);
+
     double *p1 = malloc(sizeof(double) * n_dims);
     double *p2 = malloc(sizeof(double) * n_dims);
     fprintf(stderr, "I am process %d and i am sending my median values\n", me);
