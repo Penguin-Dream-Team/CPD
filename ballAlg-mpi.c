@@ -9,6 +9,7 @@
 #include <mpi.h>
 #include <math.h>
 
+#include "ballAlg-large-mpi.h"
 #include "gen_points.h"
 #include "quickSelect.h"
 
@@ -702,7 +703,7 @@ long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points,
         printf(" %f", tree->center[i]);
     }
     printf("\n");
-
+    
     return count;       
 }
 
@@ -750,21 +751,6 @@ void print_tree(node_t *tree, int n_dims, double **points, int prev_count) {
     printf("%d %ld\n", n_dims, n_count);
 
     aux_print_tree(tree, n_dims, points, n_count, 0);
-}
-
-void finish_early_mpi(){
-    // Send end confirmation
-    int confirmation[1] = {1};
-    MPI_Send(confirmation, 1, MPI_INT, 0, CONFIRMATION_TAG, WORLD);
-
-
-    // Send node count
-    long node_count[1] = {0};
-    MPI_Send(node_count, 1, MPI_LONG, 0, COUNT_TAG, WORLD);
-
-
-    MPI_Finalize();
-    exit(0);
 }
 
 int custom_power(int base, int exponent){
@@ -884,14 +870,12 @@ void wait_mpi(int me, int start, int end, int threads) {
         MPI_Send(&current_print_proc, 1, MPI_INT, node_id[2], PRINT_2_TAG, WORLD);
     }
 
-
     MPI_Finalize();
     exit(0);
 }
 
-int main(int argc, char *argv[]) {
+int ballAlg_mpi(int argc, char *argv[], long n_samples) {
     double exec_time;
-    long n_samples;
 
     omp_set_nested(1);
     omp_set_dynamic(1);
@@ -904,7 +888,7 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &me);
     
-    points = get_points(argc, argv, &n_dims, &n_samples);
+    points = get_points(argc, argv, n_dims, n_samples);
     max_size = n_samples / 2;
 
     /*
@@ -972,4 +956,31 @@ int main(int argc, char *argv[]) {
 
     MPI_Finalize();
     exit(0);
+}
+
+int main(int argc, char *argv[]) {
+    long np;
+
+    if(argc != 4){
+        printf("Usage: %s <n_dims> <n_points> <seed>\n", argv[0]);
+        exit(1);
+    }
+
+    n_dims = atoi(argv[1]);
+    if (n_dims < 2){
+        printf("Illegal number of dimensions (%d), must be above 1.\n", n_dims);
+        exit(2);
+    }
+
+    np = atol(argv[2]);
+    if (np < 1){
+        printf("Illegal number of points (%ld), must be above 0.\n", np);
+        exit(3);
+    }
+
+    if (np * n_dims < 100000000) {
+        ballAlg_mpi(argc, argv, np);
+    } else {
+        ballAlg_large_mpi(argc, argv, np);
+    }
 }
