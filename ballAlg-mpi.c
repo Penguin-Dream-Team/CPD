@@ -107,11 +107,11 @@ double get_furthest_distance(double *point, long start, long end) {
 }
 
 int get_furthest_point_parallel(long point, long start, long end, int threads) {
-    fprintf(stderr, "**Getting Point point\n");
+    //fprintf(stderr, "**Getting Point point\n");
     double *point_point = points[ortho_points[point].point_id];
     furthest_point *furthest_points = malloc((sizeof(furthest_point)) * threads);
 
-    fprintf(stderr, "**Starting for\n");
+    //fprintf(stderr, "**Starting for\n");
     #pragma omp parallel num_threads(threads)
     {
         furthest_point fp = furthest_points[omp_get_thread_num()];
@@ -127,7 +127,7 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
         furthest_points[omp_get_thread_num()] = fp;
     }
 
-    fprintf(stderr, "**Starting other for\n");
+    //fprintf(stderr, "**Starting other for\n");
 
     long max = point;
     double max_distance = 0.0;
