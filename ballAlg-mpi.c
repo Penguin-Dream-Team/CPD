@@ -604,7 +604,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         }
     }
 
-    tree->radius = sqrt(get_furthest_distance_parallel(median_point, start, end));
+    tree->radius = sqrt(get_furthest_distance_parallel(median_point, start, end, threads));
 
     int diff = (max_processes - process) / 2;
     if (process + 1 < max_processes) {
