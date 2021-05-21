@@ -486,7 +486,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     double *recieved = malloc(sizeof(double) * (end - start));
     double *response = malloc(sizeof(double) * interval);
     
-    pritnf("DOING FOR on process %d\n", process);
+    printf("DOING FOR on process %d\n", process);
 
     // No need to send points on the first round
     if (for_it == 0){
@@ -547,7 +547,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         MPI_Comm_free(&prime_comm);
     }
     
-    pritnf("DONE FOR on process %d\n", process);
+    printf("DONE FOR on process %d\n", process);
 
     // Recording the responses in desidered structure
     for (int i = start + interval, d = interval; i < end; i++, d++) {
@@ -591,7 +591,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
     tree->radius = sqrt(get_furthest_distance(median_point, start, end));
 
-    pritnf("SENDING POINTS on process %d\n", process);
+    printf("SENDING POINTS on process %d\n", process);
 
     int diff = (max_processes - process) / 2;
     if (process + 1 < max_processes) {
@@ -612,7 +612,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         // Sending the indexes of poitns
         MPI_Send(points_index, size, MPI_LONG, new_max_processes, POINT_TAG, WORLD);
 
-        pritnf("SENT POINTS on process %d\n", process);
+        printf("SENT POINTS on process %d\n", process);
 
         tree->L = build_tree_parallel_mpi(start, median_ids.second, process, new_max_processes, threads);
         
