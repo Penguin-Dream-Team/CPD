@@ -107,21 +107,19 @@ double get_furthest_distance(double *point, long start, long end) {
 }
 
 int get_furthest_point_parallel(long point, long start, long end, int threads) {
-    //fprintf(stderr, "**Getting Point point\n");
     double *point_point = points[ortho_points[point].point_id];
     furthest_point *furthest_points = malloc((sizeof(furthest_point)) * threads);
 
-    fprintf(stderr, "**Starting for\n");
     #pragma omp parallel num_threads(threads)
     {
-        furthest_point fp = furthest_points[omp_get_thread_num()];
-	fp.max = 0;
-        fp.max_distance = 0;
+        furthest_point fp;
+	    fp.max = point;
+        fp.max_distance = 0.0;
         #pragma omp for schedule(static) 
         for (long i = start; i < end; i++) {
             double distance = distance_sqrd(points[ortho_points[i].point_id], point_point);
 
-            if (fp.max_distance < distance) {
+            if ((fp.max_distance - distance) < 0) {
                 fp.max = i;
                 fp.max_distance = distance;
             }
@@ -130,12 +128,10 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
         furthest_points[omp_get_thread_num()] = fp;
     }
 
-    //fprintf(stderr, "**Starting other for\n");
-
     long max = point;
     double max_distance = 0.0;
     for (int i = 0; i < threads; i++) {
-        if (max_distance < furthest_points[i].max_distance) {
+        if ((max_distance - furthest_points[i].max_distance) < 0) {
             max = furthest_points[i].max;
             max_distance = furthest_points[i].max_distance;
         }
@@ -148,7 +144,7 @@ double get_furthest_distance_parallel(double *point, long start, long end, int t
 
     #pragma omp parallel num_threads(threads)
     {
-        double fd = furthest_distances[omp_get_thread_num()];
+        double fd = 0.0;
         #pragma omp for schedule(static) 
         for (long i = start; i < end; i++) {
             double distance = distance_sqrd(points[ortho_points[i].point_id], point);
@@ -442,7 +438,6 @@ node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {
 
 // not inclusive
 node_t *build_tree_parallel_mpi(long start, long end, int process, int max_processes, int threads) {  
-    fprintf(stderr, "Starting mpi on process %d in interation %d\n", process, for_it);
 
     if (start == end - 1) {  // 1 point
         return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
@@ -478,24 +473,14 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
      * Get furthest points
      */
 
-    fprintf(stderr, "-- GETTING FURTHERST POINTS A on process %d\n", process);
-
     long a = get_furthest_point_parallel(start, start, end, threads);
-    fprintf(stderr, "-- A returned %ld  on process %d\n", a, process);
-    fprintf(stderr, "-- GETTING FURTHERST POINTS B on process %d\n", process);
     long b = get_furthest_point_parallel(a, start, end, threads);
-
-    fprintf(stderr, "-- GETTING point_a, point_b on process %d\n", process);
 
     double *point_a = points[ortho_points[a].point_id];
     double *point_b = points[ortho_points[b].point_id];
    
-   fprintf(stderr, "-- GETTING a1, a2  on process %d\n", process);
-
     long a1 = ortho_points[a].point_id;
     long b1 = ortho_points[b].point_id;
-
-   fprintf(stderr, "-- GETTING group size on process %d\n", process);
 
     int group_size = max_processes - process;
     int ranks[group_size];
@@ -504,8 +489,6 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     double *recieved = malloc(sizeof(double) * (end - start));
     double *response = malloc(sizeof(double) * interval);
     
-    fprintf(stderr, "DOING FOR on process %d\n", process);
-
     // No need to send points on the first round
     if (for_it == 0){
         // Sending some arguments
@@ -565,8 +548,6 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         MPI_Comm_free(&prime_comm);
     }
     
-    fprintf(stderr, "DONE FOR on process %d\n", process);
-
     // Recording the responses in desidered structure
     for (int i = start + interval, d = interval; i < end; i++, d++) {
         ortho_points[i].center[0] = recieved[d];
@@ -614,8 +595,6 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         long size = end - median_ids.second;
         long new_max_processes = process + diff;
 
-	fprintf(stderr, "SENDING POINTS on process %d to process %d\n", process, new_max_processes);
-
         // Send the right subtree to another processor
 
         // Send some arguments
@@ -629,8 +608,6 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
         // Sending the indexes of poitns
         MPI_Send(points_index, size, MPI_LONG, new_max_processes, POINT_TAG, WORLD);
-
-        fprintf(stderr, "SENT POINTS on process %d\n", process);
 
         tree->L = build_tree_parallel_mpi(start, median_ids.second, process, new_max_processes, threads);
         
@@ -853,8 +830,6 @@ void wait_mpi(int me, int start, int end, int threads) {
     // Receive Args
     long args[2];
     MPI_Recv(args, 2, MPI_LONG, MPI_ANY_SOURCE, ARGS_TAG, WORLD, MPI_STATUS_IGNORE);
-
-    fprintf(stderr, "RECEIVED AS POINT ARGS size %ld and new max processes %ld on process %d\n", args[0], args[1], me);
 
     // Receive point indexes
     long *rec_index = malloc(sizeof(long) * args[0]);
