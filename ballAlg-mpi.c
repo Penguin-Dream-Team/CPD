@@ -436,6 +436,7 @@ node_t *build_tree_parallel_omp(long start, long end, int threads, int me) {
 
 // not inclusive
 node_t *build_tree_parallel_mpi(long start, long end, int process, int max_processes, int threads) {  
+    fprintf(stderr, "Starting mpi");
 
     if (start == end - 1) {  // 1 point
         return create_node(points[ortho_points[start].point_id], ortho_points[start].point_id, 0);
@@ -486,7 +487,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     double *recieved = malloc(sizeof(double) * (end - start));
     double *response = malloc(sizeof(double) * interval);
     
-    printf("DOING FOR on process %d\n", process);
+    fprintf(stderr, "DOING FOR on process %d\n", process);
 
     // No need to send points on the first round
     if (for_it == 0){
@@ -547,7 +548,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         MPI_Comm_free(&prime_comm);
     }
     
-    printf("DONE FOR on process %d\n", process);
+    fprintf(stderr, "DONE FOR on process %d\n", process);
 
     // Recording the responses in desidered structure
     for (int i = start + interval, d = interval; i < end; i++, d++) {
@@ -591,7 +592,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
 
     tree->radius = sqrt(get_furthest_distance(median_point, start, end));
 
-    printf("SENDING POINTS on process %d\n", process);
+    fprintf(stderr, "SENDING POINTS on process %d\n", process);
 
     int diff = (max_processes - process) / 2;
     if (process + 1 < max_processes) {
@@ -612,7 +613,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         // Sending the indexes of poitns
         MPI_Send(points_index, size, MPI_LONG, new_max_processes, POINT_TAG, WORLD);
 
-        printf("SENT POINTS on process %d\n", process);
+        fprintf(stderr, "SENT POINTS on process %d\n", process);
 
         tree->L = build_tree_parallel_mpi(start, median_ids.second, process, new_max_processes, threads);
         
