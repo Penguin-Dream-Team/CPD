@@ -111,10 +111,12 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
     double *point_point = points[ortho_points[point].point_id];
     furthest_point *furthest_points = malloc((sizeof(furthest_point)) * threads);
 
-    //fprintf(stderr, "**Starting for\n");
+    fprintf(stderr, "**Starting for\n");
     #pragma omp parallel num_threads(threads)
     {
         furthest_point fp = furthest_points[omp_get_thread_num()];
+	fp.max = 0;
+        fp.max_distance = 0;
         #pragma omp for schedule(static) 
         for (long i = start; i < end; i++) {
             double distance = distance_sqrd(points[ortho_points[i].point_id], point_point);
@@ -124,6 +126,7 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
                 fp.max_distance = distance;
             }
         }
+	
         furthest_points[omp_get_thread_num()] = fp;
     }
 
