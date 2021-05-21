@@ -131,17 +131,25 @@ static double get_furthest_distance(double *point, long start, long end) {
     return max_distance;
 }
 
-static furthest_point get_furthest_point_parallel(double *point_point, long start, long end, int threads) {
+static furthest_point get_furthest_point_parallel(int me, long index, double *point_point, long start, long end, int threads) {
     furthest_point *furthest_points = malloc((sizeof(furthest_point) + 2048) * threads);
+    for (int i = 0; i < threads; i++) {
+        furthest_points[i].max = index;
+        furthest_points[i].max_distance = 0.0;
+        furthest_points[i].process = me;
+    }
 
     #pragma omp parallel num_threads(threads)
     {
-        furthest_point fp = furthest_points[omp_get_thread_num()];
+        furthest_point fp;
+        fp.max = index;
+        fp.max_distance = 0.0;
+        fp.process = me;
         #pragma omp for schedule(static) 
         for (long i = start; i < end; i++) {
             double distance = distance_sqrd(points[ortho_points[i].point_id], point_point);
 
-            if (fp.max_distance < distance) {
+            if ((fp.max_distance - distance) < 0) {
                 fp.max = i;
                 fp.max_distance = distance;
             }
@@ -149,7 +157,7 @@ static furthest_point get_furthest_point_parallel(double *point_point, long star
         furthest_points[omp_get_thread_num()] = fp;
     }
 
-    furthest_point max;
+    furthest_point max = furthest_points[0];
     double max_distance = 0.0;
     for (int i = 0; i < threads; i++) {
         if ((max_distance - furthest_points[i].max_distance) < 0) {
@@ -161,24 +169,31 @@ static furthest_point get_furthest_point_parallel(double *point_point, long star
 }
 
 static double get_furthest_distance_parallel(double *point, long start, long end, int threads) {
-    double *furthest_distances = malloc((sizeof(double) + 2048) * threads);
+    double *furthest_distances = malloc(sizeof(double) * threads);
+    for (int i = 0; i < threads; i++) furthest_distances[i] = 0.0;
 
+    /*fprintf(stderr, "Median Point ");
+    for (int i = start; i < end; i++) fprintf(stderr, " %f", point[i]);
+    fprintf(stderr, "\n");*/
     #pragma omp parallel num_threads(threads)
     {
-        double fd = furthest_distances[omp_get_thread_num()];
+        double fd = 0.0;
         #pragma omp for schedule(static) 
         for (long i = start; i < end; i++) {
             double distance = distance_sqrd(points[ortho_points[i].point_id], point);
+            //fprintf(stderr, "Distance %f\n", distance);
             if ((fd - distance) < 0) {
                 fd = distance;
             }
         }
         furthest_distances[omp_get_thread_num()] = fd;
+        //fprintf(stderr, "Furthest_point %f\n", furthest_distances[omp_get_thread_num()]);
     }
 
     double max_distance = 0.0;
     for (int i = 0; i < threads; i++) {
-        if (max_distance < furthest_distances[i]) {
+        //fprintf(stderr, "Distance vector %f\n", furthest_distances[i]);
+        if ((max_distance - furthest_distances[i]) < 0) {
             max_distance = furthest_distances[i];
         }
     }
@@ -408,8 +423,8 @@ static node_t *build_tree_parallel_omp(long start, long end, int threads, int me
     /*
      * Get furthest points
      */
-    long a = get_furthest_point_parallel(points[ortho_points[start].point_id], start, end, threads).max;
-    long b = get_furthest_point_parallel(points[ortho_points[a].point_id], start, end, threads).max;
+    long a = get_furthest_point_parallel(0, start, points[ortho_points[start].point_id], start, end, threads).max;
+    long b = get_furthest_point_parallel(0, a, points[ortho_points[a].point_id], start, end, threads).max;
 
     double *point_a = points[ortho_points[a].point_id];
     double *point_b = points[ortho_points[b].point_id];
@@ -526,7 +541,7 @@ static node_t *build_tree_parallel_mpi(long start, long end, int me, int max_pro
     /*
      * Get furthest point a
      */
-    furthest_point a = get_furthest_point_parallel(first_point, start, end, threads);
+    furthest_point a = get_furthest_point_parallel(me, 0, first_point, start, end, threads);
 
     // Receive value a
     furthest_point value_a[max_processes - 1];
@@ -564,7 +579,7 @@ static node_t *build_tree_parallel_mpi(long start, long end, int me, int max_pro
     /*
      * Get furthest point b
      */
-    furthest_point b = get_furthest_point_parallel(point_a, start, end, threads);
+    furthest_point b = get_furthest_point_parallel(me, 0, point_a, start, end, threads);
 
     // Receive value b
     furthest_point value_b[max_processes - 1];
@@ -953,7 +968,7 @@ static node_t *build_tree_parallel_mpi(long start, long end, int me, int max_pro
     //fprintf(stderr, "Receiving distances\n");
     // Receive other process distances
     double furthest_distance = get_furthest_distance_parallel(median_point, start, end, threads);
-    double others_furthest_distance[max_processes - 1];
+    double *others_furthest_distance = malloc(sizeof(double) * (max_processes - 1));
     for (int i = 1; i < max_processes; i++) {
         MPI_Recv(&others_furthest_distance[i - 1], 1, MPI_DOUBLE, i, FURTHEST_DISTANCE_TAG, communicator, MPI_STATUS_IGNORE);
     }
@@ -1141,8 +1156,7 @@ static void wait_mpi(long start, long end, int me, int max_processes, MPI_Comm c
     /*
      * Get furthest point a
      */
-    furthest_point a = get_furthest_point_parallel(first_point, start, end, threads);
-    a.process = me;
+    furthest_point a = get_furthest_point_parallel(me, 0, first_point, start, end, threads);
 
     // Send value a
     MPI_Send(&a, sizeof(furthest_point_mpi), furthest_point_mpi, 0, A_TAG, communicator);
@@ -1162,8 +1176,7 @@ static void wait_mpi(long start, long end, int me, int max_processes, MPI_Comm c
     /*
      * Get furthest point b
      */
-    furthest_point b = get_furthest_point_parallel(point_a, start, end, threads);
-    b.process = me;
+    furthest_point b = get_furthest_point_parallel(me, 0, point_a, start, end, threads);
 
     // Send value b
     MPI_Send(&b, sizeof(furthest_point_mpi), furthest_point_mpi, 0, B_TAG, communicator);
