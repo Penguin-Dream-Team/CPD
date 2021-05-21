@@ -108,27 +108,30 @@ double get_furthest_distance(double *point, long start, long end) {
 
 int get_furthest_point_parallel(long point, long start, long end, int threads) {
     double *point_point = points[ortho_points[point].point_id];
-    furthest_point *furthest_points = malloc((sizeof(furthest_point) + 2048) * threads);
+    furthest_point *furthest_points = malloc((sizeof(furthest_point)) * threads);
 
     #pragma omp parallel num_threads(threads)
     {
-        furthest_point fp = furthest_points[omp_get_thread_num()];
+        furthest_point fp;
+	    fp.max = point;
+        fp.max_distance = 0.0;
         #pragma omp for schedule(static) 
         for (long i = start; i < end; i++) {
             double distance = distance_sqrd(points[ortho_points[i].point_id], point_point);
 
-            if (fp.max_distance < distance) {
+            if ((fp.max_distance - distance) < 0) {
                 fp.max = i;
                 fp.max_distance = distance;
             }
         }
+	
         furthest_points[omp_get_thread_num()] = fp;
     }
 
     long max = point;
     double max_distance = 0.0;
     for (int i = 0; i < threads; i++) {
-        if (max_distance < furthest_points[i].max_distance) {
+        if ((max_distance - furthest_points[i].max_distance) < 0) {
             max = furthest_points[i].max;
             max_distance = furthest_points[i].max_distance;
         }
@@ -137,11 +140,11 @@ int get_furthest_point_parallel(long point, long start, long end, int threads) {
 }
 
 double get_furthest_distance_parallel(double *point, long start, long end, int threads) {
-    double *furthest_distances = malloc((sizeof(double) + 2048) * threads);
+    double *furthest_distances = malloc((sizeof(double)) * threads);
 
     #pragma omp parallel num_threads(threads)
     {
-        double fd = furthest_distances[omp_get_thread_num()];
+        double fd = 0.0;
         #pragma omp for schedule(static) 
         for (long i = start; i < end; i++) {
             double distance = distance_sqrd(points[ortho_points[i].point_id], point);
@@ -266,7 +269,6 @@ node_t *build_tree(long start, long end) {
     tree->radius = sqrt(get_furthest_distance(median_point, start, end));
 
     tree->L = build_tree(start, median_ids.second);
-
     tree->R = build_tree(median_ids.second, end);
 
     return tree;
@@ -470,12 +472,13 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
     /*
      * Get furthest points
      */
+
     long a = get_furthest_point_parallel(start, start, end, threads);
     long b = get_furthest_point_parallel(a, start, end, threads);
 
     double *point_a = points[ortho_points[a].point_id];
     double *point_b = points[ortho_points[b].point_id];
-
+   
     long a1 = ortho_points[a].point_id;
     long b1 = ortho_points[b].point_id;
 
@@ -585,7 +588,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         }
     }
 
-    tree->radius = sqrt(get_furthest_distance(median_point, start, end));
+    tree->radius = sqrt(get_furthest_distance_parallel(median_point, start, end, threads));
 
     int diff = (max_processes - process) / 2;
     if (process + 1 < max_processes) {
@@ -607,6 +610,7 @@ node_t *build_tree_parallel_mpi(long start, long end, int process, int max_proce
         MPI_Send(points_index, size, MPI_LONG, new_max_processes, POINT_TAG, WORLD);
 
         tree->L = build_tree_parallel_mpi(start, median_ids.second, process, new_max_processes, threads);
+        
 
     } else {
         #pragma omp parallel
