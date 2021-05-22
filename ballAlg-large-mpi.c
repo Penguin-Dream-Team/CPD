@@ -326,7 +326,7 @@ static node_t *build_tree(long start, long end) {
 }
 
 // not inclusive
-static void calc_projections(long start, long end, int threads, double *point_a, double *point_b){
+static void calc_projections(long start, long end, int threads, double *point_a, double *point_b) {
     /*
      * Get projections to allow median calc
      */
@@ -342,7 +342,7 @@ static void calc_projections(long start, long end, int threads, double *point_a,
 }
 
 // not inclusive
-static void calc_projections_mpi(long start, long end, int threads, long interval, long processor, long a, long b){    
+static void calc_projections_mpi(long start, long end, int threads, long interval, long processor, long a, long b) {    
     /*
      * Get furthest points
      */
@@ -501,7 +501,7 @@ static int cmpfunc_double (const void *pa, const void *pb) {
 }
 
 // not inclusive
-static node_t *build_tree_parallel_mpi(long start, long end, int me, int max_processes, MPI_Comm communicator, int threads) {  
+static node_t *build_tree_parallel_mpi(long start, long end, int me, int max_processes, MPI_Group group, MPI_Comm communicator, int threads) {  
     double *point_a = malloc(sizeof(double) * n_dims);
     double *point_b = malloc(sizeof(double) * n_dims);
     int process, sender;
@@ -827,12 +827,9 @@ static node_t *build_tree_parallel_mpi(long start, long end, int me, int max_pro
         int ranks[half_max_processes];
         if (me < half_max_processes) for (int i = 0; i < half_max_processes; i++) ranks[i] = i;
         else                         for (int i = half_max_processes; i < max_processes; i++) ranks[i - half_max_processes] = i;
-        
-        MPI_Group world_group;
-        MPI_Comm_group(WORLD, &world_group);
 
         MPI_Group new_group;
-        MPI_Group_incl(world_group, half_max_processes, ranks, &new_group);
+        MPI_Group_incl(group, half_max_processes, ranks, &new_group);
 
         // Create a new communicator based on the new group
         MPI_Comm new_communicator;
@@ -840,7 +837,7 @@ static node_t *build_tree_parallel_mpi(long start, long end, int me, int max_pro
 
         MPI_Comm_rank(new_communicator, &me);
     
-        tree->L = build_tree_parallel_mpi(start, end, me, half_max_processes, new_communicator, threads);
+        tree->L = build_tree_parallel_mpi(start, end, me, half_max_processes, new_group, new_communicator, threads);
 
     } else {
         #pragma omp parallel
@@ -862,7 +859,6 @@ static node_t *build_tree_parallel_mpi(long start, long end, int me, int max_pro
     return tree;
 }
 
-
 static void count_nodes(node_t *tree, long *n_count) {
     n_count[0]++;
 
@@ -874,8 +870,7 @@ static void count_nodes(node_t *tree, long *n_count) {
     }
 }
 
-static long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points,
-        long n_count, long count, int me) {
+static long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points, long n_count, long count, int me) {
     long my_id, left_id = -1, right_id = -1;
     bool left = false;
 
@@ -928,8 +923,7 @@ static long aux_print_tree_main_proc(node_t *tree, int n_dims, double **points,
     return count;       
 }
 
-static long aux_print_tree(node_t *tree, int n_dims, double **points,
-        long n_count, long count) {
+static long aux_print_tree(node_t *tree, int n_dims, double **points, long n_count, long count) {
     long my_id, left_id = -1, right_id = -1;
 
     my_id = count;
@@ -974,7 +968,7 @@ static void print_tree(node_t *tree, int n_dims, double **points, int prev_count
     aux_print_tree(tree, n_dims, points, n_count, 0);
 }
 
-static void wait_mpi(long start, long end, int me, int max_processes, MPI_Comm communicator, int threads) {
+static void wait_mpi(long start, long end, int me, int max_processes, MPI_Group group, MPI_Comm communicator, int threads) {
     double *point_a = malloc(sizeof(double) * n_dims);
     double *point_b = malloc(sizeof(double) * n_dims);
     int sender;
@@ -1355,11 +1349,8 @@ static void wait_mpi(long start, long end, int me, int max_processes, MPI_Comm c
         if (me < half_max_processes) for (int i = 0; i < half_max_processes; i++) ranks[i] = i;
         else                         for (int i = half_max_processes; i < max_processes; i++) ranks[i - half_max_processes] = i;
 
-        MPI_Group world_group;
-        MPI_Comm_group(WORLD, &world_group);
-
         MPI_Group new_group;
-        MPI_Group_incl(world_group, half_max_processes, ranks, &new_group);
+        MPI_Group_incl(group, half_max_processes, ranks, &new_group);
 
         // Create a new communicator based on the new group
         MPI_Comm new_communicator;
@@ -1368,9 +1359,9 @@ static void wait_mpi(long start, long end, int me, int max_processes, MPI_Comm c
         MPI_Comm_rank(new_communicator, &me);
     
         if (me == 0) {
-            tree = build_tree_parallel_mpi(start, end, me, half_max_processes, new_communicator, threads);
+            tree = build_tree_parallel_mpi(start, end, me, half_max_processes, new_group, new_communicator, threads);
         } else {
-            wait_mpi(start, end, me, half_max_processes, new_communicator, threads);
+            wait_mpi(start, end, me, half_max_processes, new_group, new_communicator, threads);
         }
     } else {
         if (threads > 2) {
@@ -1460,9 +1451,9 @@ int ballAlg_large_mpi(int argc, char *argv[], long n_samples) {
     }
     
     if (me != 0)
-        wait_mpi(0, n_samples, me, nprocs, WORLD, max_threads);
+        wait_mpi(0, n_samples, me, nprocs, world_group, WORLD, max_threads);
 
-    node_t *tree = build_tree_parallel_mpi(0, n_samples, 0, nprocs, WORLD, max_threads);
+    node_t *tree = build_tree_parallel_mpi(0, n_samples, 0, nprocs, world_group, WORLD, max_threads);
     
     // Receive confirmation
     int confirmation;
